@@ -1,0 +1,53 @@
+# BMAD sprint-planning — état d'avancement
+# Mise à jour : à chaque story terminée.
+
+project: nexus
+generated: 2026-09-22
+
+epics:
+  epic-1:
+    title: Socle & identité multi-tenant
+    stories:
+      E1-S1: done      # bootstrap Next.js 16 + toolchain + CI
+      E1-S2: done      # migration 0001 : schéma complet + RLS (non appliquée — attente projet Supabase)
+      E1-S3: done      # auth signup/login/logout + callback
+      E1-S4: done      # onboarding + create_organization atomique
+      E1-S5: done      # app shell, sidebar, org switcher, DAL guards
+      E1-S6: done      # membres + invitations (lien manuel MVP)
+      E1-S7: done      # audit_logs + log_audit
+  epic-2:
+    title: CRM cœur
+    stories:
+      E2-S1: backlog   # accounts
+      E2-S2: backlog   # contacts
+      E2-S3: backlog   # pipeline + opportunités kanban
+      E2-S4: backlog   # tags
+      E2-S5: backlog   # leads
+  epic-3:
+    title: Projets & tâches
+    stories:
+      E3-S1: backlog
+      E3-S2: backlog
+      E3-S3: backlog
+      E3-S4: backlog
+      E3-S5: backlog
+  epic-4:
+    title: Documents
+    stories:
+      E4-S1: backlog
+      E4-S2: backlog
+      E4-S3: backlog
+      E4-S4: backlog
+  epic-5:
+    title: Pilotage & UX système
+    stories:
+      E5-S1: backlog   # dashboard (squelette posé)
+      E5-S2: backlog   # recherche globale
+      E5-S3: backlog   # command palette
+      E5-S4: backlog   # dark mode/a11y polish (partiel)
+
+blockers:
+  - Créer le projet Supabase Cloud (région EU à confirmer) + renseigner .env.local
+  - Lier : npx supabase link --project-ref <ref> && npx supabase db push
+  - Régénérer les types : npx supabase gen types --linked > src/lib/database.types.ts
+  - Déployer Vercel + connecter repo GitHub
