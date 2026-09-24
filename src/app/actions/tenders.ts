@@ -391,6 +391,39 @@ export async function setChecklistItemStatus(
   return { success: true }
 }
 
+export async function updateChecklistItem(
+  orgSlug: string,
+  itemId: string,
+  tenderId: string,
+  input: unknown,
+): Promise<ActionState> {
+  const ctx = await requireMembership(orgSlug, 'member')
+  if (!ctx) return { error: 'Accès refusé.' }
+  const parsed = checklistItemSchema.safeParse(input)
+  if (!parsed.success) return { fieldErrors: parsed.error.flatten().fieldErrors }
+  const d = parsed.data
+
+  const { error } = await ctx.supabase
+    .from('tender_checklist_items')
+    .update({
+      label: d.label,
+      category: d.category,
+      requirement: d.requirement,
+      internal_deadline: d.internalDeadline || null,
+      requires_signature: d.requiresSignature,
+      requires_chiffrage: d.requiresChiffrage,
+      risk_level: d.riskLevel,
+      comment: d.comment || null,
+    })
+    .eq('organization_id', ctx.org.id)
+    .eq('id', itemId)
+  if (error) return fail(error)
+
+  await runChecks(ctx.supabase, tenderId)
+  revalidatePath(`/${orgSlug}/tenders/${tenderId}`)
+  return { success: true }
+}
+
 export async function assignChecklistItem(
   orgSlug: string,
   itemId: string,

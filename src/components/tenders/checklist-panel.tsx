@@ -4,7 +4,7 @@ import { useState, useTransition } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { toast } from 'sonner'
-import { FileText, Plus, RefreshCw, Trash2 } from 'lucide-react'
+import { Check, FileText, MessageSquare, Plus, RefreshCw, Trash2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -38,6 +38,8 @@ import {
   CHECKLIST_STATUS_LABELS,
   REQUIREMENT_LABELS,
 } from './constants'
+import { ChecklistItemDialog, STATUS_BADGE } from './checklist-item-dialog'
+import { formatDate } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import type {
   ChecklistCategory,
@@ -87,6 +89,7 @@ export function ChecklistPanel({
 }) {
   const [pending, startTransition] = useTransition()
   const [addOpen, setAddOpen] = useState(false)
+  const [detailId, setDetailId] = useState<string | null>(null)
   const [category, setCategory] = useState<ChecklistCategory>('administratif')
   const [requirement, setRequirement] = useState<ChecklistRequirement>('obligatoire')
   const [assigneeId, setAssigneeId] = useState('')
@@ -277,7 +280,13 @@ export function ChecklistPanel({
                   />
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-sm font-medium">{item.label}</span>
+                      <button
+                        type="button"
+                        onClick={() => setDetailId(item.id)}
+                        className="text-left text-sm font-medium hover:underline focus-visible:underline focus-visible:outline-none"
+                      >
+                        {item.label}
+                      </button>
                       <Badge
                         variant="secondary"
                         className={cn(
@@ -292,6 +301,22 @@ export function ChecklistPanel({
                         <Badge variant="secondary" className="text-[10px]">
                           ✍ signature
                         </Badge>
+                      )}
+                      {item.requires_chiffrage && (
+                        <Badge variant="secondary" className="text-[10px]">
+                          € chiffrage
+                        </Badge>
+                      )}
+                      {item.internal_deadline && (
+                        <Badge variant="secondary" className="text-[10px]">
+                          éch. {formatDate(item.internal_deadline)}
+                        </Badge>
+                      )}
+                      {item.comment && (
+                        <MessageSquare
+                          className="size-3.5 text-muted-foreground"
+                          aria-label="Commentaire"
+                        />
                       )}
                     </div>
                     {item.document && (
@@ -347,6 +372,22 @@ export function ChecklistPanel({
                           ))}
                         </SelectContent>
                       </Select>
+                      {item.status !== 'valide' && (
+                        <Button
+                          variant="outline"
+                          size="icon-sm"
+                          disabled={pending}
+                          aria-label={`Valider ${item.label}`}
+                          title="Marquer validé"
+                          onClick={() =>
+                            act(() =>
+                              setChecklistItemStatus(orgSlug, item.id, tenderId, 'valide'),
+                            )
+                          }
+                        >
+                          <Check className="size-4 text-emerald-600" />
+                        </Button>
+                      )}
                       <Select
                         value={item.status}
                         onValueChange={(v) =>
@@ -361,7 +402,13 @@ export function ChecklistPanel({
                         }
                         disabled={pending}
                       >
-                        <SelectTrigger className="h-8 w-36 text-xs">
+                        <SelectTrigger
+                          aria-label={`Statut de ${item.label}`}
+                          className={cn(
+                            'h-7 w-auto gap-1 rounded-full border-0 px-2.5 text-[11px] font-medium',
+                            STATUS_BADGE[item.status],
+                          )}
+                        >
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
@@ -397,6 +444,25 @@ export function ChecklistPanel({
           Aucune ligne de checklist.
         </p>
       )}
+
+      {detailId &&
+        (() => {
+          const item = items.find((i) => i.id === detailId)
+          return item ? (
+            <ChecklistItemDialog
+              orgSlug={orgSlug}
+              tenderId={tenderId}
+              item={item}
+              documents={documents}
+              members={members}
+              canEdit={canEdit}
+              open
+              onOpenChange={(o) => {
+                if (!o) setDetailId(null)
+              }}
+            />
+          ) : null
+        })()}
     </div>
   )
 }
