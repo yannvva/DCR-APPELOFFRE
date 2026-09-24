@@ -18,8 +18,9 @@ import {
 import { formatDate, formatEuros, isOverdue, isDueSoon, daysUntil } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { TENDER_STATUS_COLORS, TENDER_STATUS_LABELS } from '@/components/tenders/constants'
+import { Button } from '@/components/ui/button'
 import type { TenderStatus } from '@/lib/types'
-import { FileSignature } from 'lucide-react'
+import { FileSignature, Pencil } from 'lucide-react'
 import { Suspense } from 'react'
 import { StatusFilter } from './status-filter'
 
@@ -90,6 +91,11 @@ export default async function TendersPage({
                 <TableHead>Complétude</TableHead>
                 <TableHead>Responsable</TableHead>
                 <TableHead>Statut</TableHead>
+                {canEdit && (
+                  <TableHead className="w-12">
+                    <span className="sr-only">Actions</span>
+                  </TableHead>
+                )}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -162,6 +168,25 @@ export default async function TendersPage({
                         {TENDER_STATUS_LABELS[t.status]}
                       </Badge>
                     </TableCell>
+                    {canEdit && (
+                      <TableCell>
+                        <TenderDialog
+                          orgSlug={orgSlug}
+                          tender={t}
+                          accounts={accounts}
+                          members={memberOptions}
+                          trigger={
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              aria-label={`Modifier ${t.title}`}
+                            >
+                              <Pencil className="size-4" />
+                            </Button>
+                          }
+                        />
+                      </TableCell>
+                    )}
                   </TableRow>
                 )
               })}
