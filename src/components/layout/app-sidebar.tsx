@@ -22,6 +22,7 @@ import { useTheme } from 'next-themes'
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -75,7 +76,9 @@ export function AppSidebar({
             <ChevronsUpDown className="size-4 text-muted-foreground" />
           </DropdownMenuTrigger>
           <DropdownMenuContent className="w-56" align="start">
-            <DropdownMenuLabel>Organisations</DropdownMenuLabel>
+            <DropdownMenuGroup>
+              <DropdownMenuLabel>Organisations</DropdownMenuLabel>
+            </DropdownMenuGroup>
             {orgs.map((o) => (
               <DropdownMenuItem key={o.id} render={<Link href={`/${o.slug}/dashboard`} />}>
                 <span className="flex w-full items-center justify-between">
@@ -142,7 +145,9 @@ export function AppSidebar({
             </div>
           </DropdownMenuTrigger>
           <DropdownMenuContent className="w-56" align="start">
-            <DropdownMenuLabel className="truncate">{user.email}</DropdownMenuLabel>
+            <DropdownMenuGroup>
+              <DropdownMenuLabel className="truncate">{user.email}</DropdownMenuLabel>
+            </DropdownMenuGroup>
             <DropdownMenuSeparator />
             <DropdownMenuItem
               onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
