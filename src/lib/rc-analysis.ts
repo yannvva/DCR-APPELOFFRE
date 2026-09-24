@@ -37,8 +37,8 @@ export async function analyzeRcDocument(
   let text = ''
   if (doc.mime_type === 'application/pdf') {
     const buf = Buffer.from(await fileData.arrayBuffer())
-    const mod = (await import('pdf-parse')) as unknown as { default: (buf: Buffer) => Promise<{ text: string }> }
-    const pdf = await mod.default(buf)
+    const pdfParse = (await import('pdf-parse')).default
+    const pdf = await pdfParse(buf)
     text = pdf.text
   } else if (doc.mime_type?.startsWith('text/')) {
     text = await fileData.text()
