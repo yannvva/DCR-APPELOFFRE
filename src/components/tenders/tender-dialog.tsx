@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useFieldArray, useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { toast } from 'sonner'
-import { Plus, Trash2 } from 'lucide-react'
+import { Link2, Loader2, Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -25,7 +25,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { tenderSchema } from '@/lib/validation/domain'
-import { createTender, updateTender } from '@/app/actions/tenders'
+import { createTender, fetchTenderFromUrl, updateTender } from '@/app/actions/tenders'
 import type { Account, DepositMode, MarketType, Tender, TenderLot } from '@/lib/types'
 import type { z } from 'zod'
 
@@ -59,10 +59,13 @@ export function TenderDialog({
   const [siteVisitMandatory, setSiteVisitMandatory] = useState(
     tender?.site_visit_mandatory ?? false,
   )
+  const [importUrl, setImportUrl] = useState('')
+  const [importing, setImporting] = useState(false)
   const {
     register,
     handleSubmit,
     setError,
+    setValue,
     control,
     formState: { errors, isSubmitting },
   } = useForm<FormValues, unknown, Values>({
@@ -93,6 +96,70 @@ export function TenderDialog({
     },
   })
   const { fields, append, remove } = useFieldArray({ control, name: 'lots' })
+
+  async function importFromUrl() {
+    const url = importUrl.trim()
+    if (!url) return
+    setImporting(true)
+    const res = await fetchTenderFromUrl(orgSlug, url)
+    setImporting(false)
+    if (res.error || !res.data) {
+      toast.error(res.error ?? 'Extraction impossible.')
+      return
+    }
+    const d = res.data
+    const found: string[] = []
+    if (d.title) {
+      setValue('title', d.title)
+      found.push('intitulé')
+    }
+    if (d.reference) {
+      setValue('reference', d.reference)
+      found.push('référence')
+    }
+    if (d.responseDeadline) {
+      setValue('responseDeadline', d.responseDeadline)
+      found.push('date limite')
+    }
+    if (d.publishedAt) {
+      setValue('publishedAt', d.publishedAt)
+      found.push('publication')
+    }
+    if (d.platform) {
+      setValue('platform', d.platform)
+      found.push('plateforme')
+    }
+    if (d.region) {
+      setValue('region', d.region)
+      found.push('région')
+    }
+    setValue('dceUrl', d.url)
+
+    // Acheteur : correspondance floue avec les comptes, sinon note
+    if (d.buyer) {
+      const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '')
+      const match = accounts.find(
+        (a) => norm(a.name).includes(norm(d.buyer!)) || norm(d.buyer!).includes(norm(a.name)),
+      )
+      if (match) {
+        setBuyerAccountId(match.id)
+        found.push('acheteur')
+      } else {
+        const note = `Acheteur (extrait) : ${d.buyer}`
+        setValue('notes', ((tender?.notes ?? '') + '\n' + note).trim())
+        found.push('acheteur (en notes)')
+      }
+    }
+    if (d.excerpt) {
+      const note = ((tender?.notes ?? '') + '\n' + d.excerpt).trim()
+      setValue('notes', note.slice(0, 10000))
+    }
+    toast.success(
+      found.length
+        ? `Importé : ${found.join(', ')}`
+        : 'Page récupérée — complétez manuellement.',
+    )
+  }
 
   async function onSubmit(values: Values) {
     const input = {
@@ -138,6 +205,35 @@ export function TenderDialog({
           </DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
+          {!tender && (
+            <div className="space-y-2 rounded-lg border border-dashed border-border p-3">
+              <Label htmlFor="importUrl" className="flex items-center gap-1.5 text-sm font-medium">
+                <Link2 className="size-4" /> Importer depuis une URL d’avis
+              </Label>
+              <div className="flex gap-2">
+                <Input
+                  id="importUrl"
+                  value={importUrl}
+                  onChange={(e) => setImportUrl(e.target.value)}
+                  placeholder="https://www.marchesonline.com/appels-offres/…"
+                  inputMode="url"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={importFromUrl}
+                  disabled={importing || !importUrl.trim()}
+                >
+                  {importing ? <Loader2 className="size-4 animate-spin" /> : 'Analyser'}
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Extraction automatique : intitulé, référence, acheteur, deadline, plateforme.
+                Vérifiez toujours les champs avant d’enregistrer.
+              </p>
+            </div>
+          )}
+
           {/* Identification */}
           <fieldset className="space-y-3">
             <legend className="text-sm font-semibold">Identification</legend>

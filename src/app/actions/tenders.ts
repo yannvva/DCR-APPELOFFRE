@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { importTenderFromUrl, type TenderImport } from '@/lib/tender-import'
 import { requireMembership } from '@/lib/dal/auth'
 import { audit } from '@/lib/audit'
 import {
@@ -24,6 +25,31 @@ const toCents = (euros: number | '' | undefined) =>
   euros === '' || euros == null ? null : Math.round(euros * 100)
 
 // ============================ TENDERS ============================
+
+export async function fetchTenderFromUrl(
+  orgSlug: string,
+  url: string,
+): Promise<{ data?: TenderImport; error?: string }> {
+  const ctx = await requireMembership(orgSlug, 'member')
+  if (!ctx) return { error: 'Accès refusé.' }
+  try {
+    new URL(url.trim())
+  } catch {
+    return { error: 'URL invalide.' }
+  }
+  try {
+    const data = await importTenderFromUrl(url)
+    if (!data.title && !data.responseDeadline) {
+      return {
+        error:
+          'Extraction impossible — la page ne contient pas d’informations exploitables (ou nécessite une connexion).',
+      }
+    }
+    return { data }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : 'Échec de la récupération de la page.' }
+  }
+}
 
 export async function createTender(orgSlug: string, input: unknown): Promise<ActionState> {
   const ctx = await requireMembership(orgSlug, 'member')
