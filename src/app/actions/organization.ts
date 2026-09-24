@@ -27,7 +27,7 @@ export async function createOrganization(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  await requireUser()
+  const { user } = await requireUser()
 
   const parsed = createOrganizationSchema.safeParse({ name: formData.get('name') })
   if (!parsed.success) {
@@ -35,6 +35,17 @@ export async function createOrganization(
   }
 
   const supabase = await createClient()
+
+  // Backfill : comptes créés avant la migration n'ont pas de profil
+  await supabase.from('profiles').upsert(
+    {
+      id: user.id,
+      full_name: (user.user_metadata?.full_name as string) ?? '',
+      avatar_url: (user.user_metadata?.avatar_url as string) ?? null,
+    },
+    { onConflict: 'id', ignoreDuplicates: true },
+  )
+
   const base = slugify(parsed.data.name)
 
   // Retry sur collision de slug (unique constraint)
@@ -48,6 +59,7 @@ export async function createOrganization(
       redirect(`/${slug}/dashboard`)
     }
     if (error && error.code !== '23505') {
+      console.error('create_organization failed:', error.code, error.message, error.details)
       return { error: 'Erreur lors de la création de l’organisation.' }
     }
   }
