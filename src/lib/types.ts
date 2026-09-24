@@ -375,6 +375,8 @@ export interface TenderChecklistItem {
   risk_level: 'bas' | 'moyen' | 'haut'
   requires_signature: boolean
   requires_chiffrage: boolean
+  forced_valid: boolean
+  force_reason: string | null
   position: number
   validated_by: string | null
   validated_at: string | null

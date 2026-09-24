@@ -347,13 +347,16 @@ export async function setChecklistItemStatus(
   itemId: string,
   tenderId: string,
   status: ChecklistItemStatus,
+  force = false,
+  forceReason = '',
 ): Promise<ActionState> {
   const ctx = await requireMembership(orgSlug, 'member')
   if (!ctx) return { error: 'Accès refusé.' }
   if (!ITEM_STATUSES.includes(status)) return { error: 'Statut invalide.' }
 
-  // Une ligne à signature exigée ne peut être validée sans pièce signée
-  if (status === 'valide') {
+  // Une ligne à signature exigée ne peut être validée sans pièce signée,
+  // sauf si l'utilisateur force explicitement la validation.
+  if (status === 'valide' && !force) {
     const { data: item } = await ctx.supabase
       .from('tender_checklist_items')
       .select('requires_signature, document:documents(is_signed)')
@@ -361,7 +364,7 @@ export async function setChecklistItemStatus(
       .single()
     const doc = Array.isArray(item?.document) ? item.document[0] : item?.document
     if (item?.requires_signature && !doc?.is_signed) {
-      return { error: 'Impossible de valider : la pièce doit être signée.' }
+      return { error: 'Impossible de valider : la pièce doit être signée. Cochez « Forcer la validation » pour passer outre.' }
     }
   }
 
@@ -369,9 +372,11 @@ export async function setChecklistItemStatus(
     .from('tender_checklist_items')
     .update({
       status,
+      forced_valid: status === 'valide' && force,
+      force_reason: status === 'valide' && force ? forceReason || null : null,
       ...(status === 'valide'
         ? { validated_by: ctx.user.id, validated_at: new Date().toISOString() }
-        : {}),
+        : { forced_valid: false, force_reason: null }),
     })
     .eq('organization_id', ctx.org.id)
     .eq('id', itemId)
@@ -381,10 +386,10 @@ export async function setChecklistItemStatus(
   if (status === 'valide') {
     await audit(ctx.supabase, {
       organizationId: ctx.org.id,
-      action: 'checklist.validated',
+      action: force ? 'checklist.force_validated' : 'checklist.validated',
       entityType: 'tender_checklist_item',
       entityId: itemId,
-      metadata: { tender_id: tenderId },
+      metadata: { tender_id: tenderId, force_reason: forceReason || null },
     })
   }
   revalidatePath(`/${orgSlug}/tenders/${tenderId}`)
@@ -475,6 +480,93 @@ export async function attachItemDocument(
   await runChecks(ctx.supabase, tenderId)
   revalidatePath(`/${orgSlug}/tenders/${tenderId}`)
   return { success: true }
+}
+
+const ALLOWED_MIME = new Set([
+  'application/pdf',
+  'image/png',
+  'image/jpeg',
+  'image/webp',
+  'application/zip',
+  'text/plain',
+  'text/csv',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+])
+
+/** Upload un fichier et l'attache à une ligne de checklist en une seule étape. */
+export async function uploadAndAttachToChecklistItem(
+  orgSlug: string,
+  itemId: string,
+  tenderId: string,
+  formData: FormData,
+): Promise<ActionState & { documentId?: string }> {
+  const ctx = await requireMembership(orgSlug, 'member')
+  if (!ctx) return { error: 'Accès refusé.' }
+  const { supabase, org, user } = ctx
+
+  const file = formData.get('file')
+  if (!(file instanceof File)) return { error: 'Fichier manquant.' }
+  if (file.size <= 0 || file.size > 25 * 1024 * 1024) return { error: 'Taille maximale : 25 Mo.' }
+  if (!ALLOWED_MIME.has(file.type)) return { error: 'Type de fichier non autorisé.' }
+
+  const category = (formData.get('category') as string) || 'autre'
+  const docId = crypto.randomUUID()
+  const storagePath = `org_${org.id}/${docId}/${file.name.replace(/[^\w.()-]/g, '_')}`
+
+  const { error: upErr } = await supabase.storage
+    .from('documents')
+    .upload(storagePath, file, { contentType: file.type })
+  if (upErr) return { error: 'Échec de l’envoi du fichier.' }
+
+  const { data: doc, error: dbErr } = await supabase
+    .from('documents')
+    .insert({
+      id: docId,
+      organization_id: org.id,
+      name: file.name,
+      storage_path: storagePath,
+      mime_type: file.type,
+      size_bytes: file.size,
+      category,
+      uploaded_by: user.id,
+    })
+    .select('id, name')
+    .single()
+  if (dbErr) {
+    await supabase.storage.from('documents').remove([storagePath])
+    return { error: 'Échec de l’enregistrement du document.' }
+  }
+
+  // Lier au tender + attacher à la ligne de checklist
+  await supabase.from('document_links').upsert(
+    {
+      organization_id: org.id,
+      document_id: doc.id,
+      entity_type: 'tender',
+      entity_id: tenderId,
+    },
+    { onConflict: 'document_id,entity_type,entity_id' },
+  )
+  const { error: attachErr } = await supabase
+    .from('tender_checklist_items')
+    .update({ document_id: doc.id, status: 'a_verifier' })
+    .eq('organization_id', org.id)
+    .eq('id', itemId)
+  if (attachErr) return fail(attachErr)
+
+  await runChecks(supabase, tenderId)
+  await audit(supabase, {
+    organizationId: org.id,
+    action: 'document.uploaded',
+    entityType: 'document',
+    entityId: doc.id,
+    metadata: { name: file.name, checklist_item: itemId },
+  })
+  revalidatePath(`/${orgSlug}/tenders/${tenderId}`)
+  return { success: true, documentId: doc.id }
 }
 
 export async function deleteChecklistItem(

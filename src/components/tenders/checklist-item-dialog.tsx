@@ -4,7 +4,8 @@ import { useState, useTransition } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { toast } from 'sonner'
-import { CalendarClock, FileText, ShieldAlert } from 'lucide-react'
+import { CalendarClock, FileText, ShieldAlert, Upload } from 'lucide-react'
+import { useRef } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -28,6 +29,7 @@ import {
   attachItemDocument,
   setChecklistItemStatus,
   updateChecklistItem,
+  uploadAndAttachToChecklistItem,
 } from '@/app/actions/tenders'
 import { checklistItemSchema } from '@/lib/validation/domain'
 import {
@@ -95,6 +97,11 @@ export function ChecklistItemDialog({
   const [riskLevel, setRiskLevel] = useState(item.risk_level)
   const [requiresSignature, setRequiresSignature] = useState(item.requires_signature)
   const [requiresChiffrage, setRequiresChiffrage] = useState(item.requires_chiffrage)
+  const [forceValid, setForceValid] = useState(false)
+  const [forceReason, setForceReason] = useState('')
+  const [dragOver, setDragOver] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const fileRef = useRef<HTMLInputElement>(null)
   const {
     register,
     handleSubmit,
@@ -117,10 +124,28 @@ export function ChecklistItemDialog({
 
   const setStatus = (status: ChecklistItemStatus) =>
     startTransition(async () => {
-      const res = await setChecklistItemStatus(orgSlug, item.id, tenderId, status)
+      const res = await setChecklistItemStatus(
+        orgSlug,
+        item.id,
+        tenderId,
+        status,
+        status === 'valide' ? forceValid : false,
+        status === 'valide' ? forceReason : '',
+      )
       if (res?.error) toast.error(res.error)
       else toast.success(`Statut : ${CHECKLIST_STATUS_LABELS[status]}`)
     })
+
+  async function handleUpload(file: File) {
+    setUploading(true)
+    const fd = new FormData()
+    fd.set('file', file)
+    fd.set('category', category)
+    const res = await uploadAndAttachToChecklistItem(orgSlug, item.id, tenderId, fd)
+    setUploading(false)
+    if (res?.error) toast.error(res.error)
+    else toast.success(`${file.name} attaché`)
+  }
 
   async function onSave(values: Values) {
     const res = await updateChecklistItem(orgSlug, item.id, tenderId, {
@@ -178,7 +203,7 @@ export function ChecklistItemDialog({
           )}
         </div>
 
-        {/* Pièce jointe */}
+        {/* Pièce jointe — drag & drop + upload + select */}
         <div className="space-y-1.5">
           <Label>Pièce associée</Label>
           {item.document ? (
@@ -202,30 +227,118 @@ export function ChecklistItemDialog({
           ) : (
             <p className="text-xs text-muted-foreground">Aucune pièce attachée.</p>
           )}
+
           {canEdit && (
-            <Select
-              value={item.document_id ?? ''}
-              onValueChange={(v) =>
-                startTransition(async () => {
-                  const res = await attachItemDocument(orgSlug, item.id, tenderId, v || null)
-                  if (res?.error) toast.error(res.error)
-                })
-              }
-              disabled={pending}
-            >
-              <SelectTrigger className="h-8 text-xs">
-                <SelectValue placeholder="Attacher / changer de pièce…" />
-              </SelectTrigger>
-              <SelectContent>
-                {documents.map((d) => (
-                  <SelectItem key={d.id} value={d.id}>
-                    {d.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <>
+              {/* Zone drag & drop */}
+              <div
+                onDragOver={(e) => {
+                  e.preventDefault()
+                  setDragOver(true)
+                }}
+                onDragLeave={() => setDragOver(false)}
+                onDrop={(e) => {
+                  e.preventDefault()
+                  setDragOver(false)
+                  const f = e.dataTransfer.files?.[0]
+                  if (f) void handleUpload(f)
+                }}
+                onClick={() => fileRef.current?.click()}
+                className={cn(
+                  'flex cursor-pointer items-center justify-center gap-2 rounded-lg border-2 border-dashed px-3 py-4 text-sm transition-colors',
+                  dragOver
+                    ? 'border-primary bg-primary/5'
+                    : 'border-border hover:border-foreground/30',
+                  uploading && 'pointer-events-none opacity-60',
+                )}
+              >
+                <Upload className="size-4 text-muted-foreground" />
+                {uploading
+                  ? 'Envoi…'
+                  : dragOver
+                    ? 'Déposez le fichier ici'
+                    : 'Glissez-déposez un fichier ou cliquez pour parcourir'}
+              </div>
+              <input
+                ref={fileRef}
+                type="file"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0]
+                  if (f) void handleUpload(f)
+                  e.target.value = ''
+                }}
+              />
+
+              {/* Ou attacher un document existant */}
+              {documents.length > 0 && (
+                <details className="text-xs">
+                  <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
+                    Ou attacher un document existant…
+                  </summary>
+                  <Select
+                    value={item.document_id ?? ''}
+                    onValueChange={(v) =>
+                      startTransition(async () => {
+                        const res = await attachItemDocument(orgSlug, item.id, tenderId, v || null)
+                        if (res?.error) toast.error(res.error)
+                      })
+                    }
+                    disabled={pending}
+                  >
+                    <SelectTrigger className="mt-1.5 h-8 text-xs">
+                      <SelectValue placeholder="Choisir un document…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {documents.map((d) => (
+                        <SelectItem key={d.id} value={d.id}>
+                          {d.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </details>
+              )}
+            </>
           )}
         </div>
+
+        {/* Forcer la validation */}
+        {canEdit && item.status !== 'valide' && (
+          <div className="space-y-1.5 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3">
+            <label className="flex items-center gap-2 text-sm font-medium">
+              <Checkbox
+                checked={forceValid}
+                onCheckedChange={(v) => setForceValid(v === true)}
+              />
+              Forcer la validation sans pièce signée
+            </label>
+            {forceValid && (
+              <Input
+                placeholder="Motif du forçage (ex : pièce déjà transmise par email, en cours de signature…)"
+                value={forceReason}
+                onChange={(e) => setForceReason(e.target.value)}
+                className="text-xs"
+              />
+            )}
+            {forceValid && (
+              <Button
+                type="button"
+                size="sm"
+                className="w-full"
+                disabled={pending}
+                onClick={() => setStatus('valide')}
+              >
+                Valider en forçant
+              </Button>
+            )}
+          </div>
+        )}
+        {item.forced_valid && (
+          <p className="text-xs text-amber-600 dark:text-amber-400">
+            ⚠ Validité forcée{item.force_reason ? ` : ${item.force_reason}` : ''}
+          </p>
+        )}
 
         {/* Détails éditables */}
         <form onSubmit={handleSubmit(onSave)} className="space-y-3">
