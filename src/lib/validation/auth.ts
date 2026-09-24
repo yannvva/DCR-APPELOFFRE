@@ -30,4 +30,5 @@ export type ActionState = {
   fieldErrors?: Record<string, string[]>
   success?: boolean
   inviteUrl?: string
+  id?: string
 } | undefined

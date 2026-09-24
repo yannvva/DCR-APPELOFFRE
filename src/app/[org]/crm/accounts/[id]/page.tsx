@@ -36,7 +36,12 @@ export default async function AccountDetailPage({
   return (
     <div className="mx-auto max-w-5xl space-y-6 p-6">
       <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon-sm" render={<Link href={`/${orgSlug}/crm/accounts`} />}>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          nativeButton={false}
+          render={<Link href={`/${orgSlug}/crm/accounts`} />}
+        >
           <ArrowLeft className="size-4" />
         </Button>
         <div className="min-w-0 flex-1">

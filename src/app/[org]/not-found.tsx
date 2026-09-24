@@ -8,7 +8,7 @@ export default function OrgNotFound() {
       <p className="text-muted-foreground">
         Cette organisation ou cette page n’existe pas — ou vous n’y avez pas accès.
       </p>
-      <Button variant="outline" render={<Link href="/" />}>
+      <Button variant="outline" nativeButton={false} render={<Link href="/" />}>
         Retour à l’accueil
       </Button>
     </div>

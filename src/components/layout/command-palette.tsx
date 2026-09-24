@@ -9,6 +9,7 @@ import {
   FolderKanban,
   CheckSquare,
   CircleDot,
+  FileSignature,
   LayoutDashboard,
   Users,
   Settings,
@@ -26,7 +27,7 @@ import {
 } from '@/components/ui/command'
 
 interface SearchResult {
-  type: 'account' | 'contact' | 'opportunity' | 'project' | 'task' | 'document'
+  type: 'account' | 'contact' | 'opportunity' | 'project' | 'task' | 'document' | 'tender'
   id: string
   label: string
   sub?: string
@@ -39,10 +40,12 @@ const TYPE_META: Record<SearchResult['type'], { icon: typeof FileText; path: (or
   project: { icon: FolderKanban, path: (o, id) => `/${o}/projects/${id}` },
   task: { icon: CheckSquare, path: (o) => `/${o}/projects` },
   document: { icon: FileText, path: (o) => `/${o}/documents` },
+  tender: { icon: FileSignature, path: (o, id) => `/${o}/tenders/${id}` },
 }
 
 const NAV = [
   { label: 'Dashboard', icon: LayoutDashboard, path: 'dashboard' },
+  { label: 'Appels d’offres', icon: FileSignature, path: 'tenders' },
   { label: 'Opportunités', icon: CircleDot, path: 'crm/opportunities' },
   { label: 'Entreprises', icon: Building2, path: 'crm/accounts' },
   { label: 'Contacts', icon: Contact, path: 'crm/contacts' },
@@ -54,6 +57,7 @@ const NAV = [
 ] as const
 
 const ACTIONS = [
+  { label: 'Nouvel appel d’offres', icon: FileSignature, path: 'tenders?new=1' },
   { label: 'Nouvelle entreprise', icon: Plus, path: 'crm/accounts?new=1' },
   { label: 'Nouveau contact', icon: Plus, path: 'crm/contacts?new=1' },
   { label: 'Nouvelle opportunité', icon: Plus, path: 'crm/opportunities?new=1' },

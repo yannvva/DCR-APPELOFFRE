@@ -16,6 +16,7 @@ import {
   Sun,
   Moon,
   Search,
+  FileSignature,
 } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import {
@@ -36,6 +37,7 @@ type OrgWithRole = Organization & { memberRole: MembershipRole }
 
 const NAV_ITEMS = [
   { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { key: 'tenders', label: 'Appels d’offres', icon: FileSignature },
   { key: 'crm', label: 'CRM', icon: Users },
   { key: 'projects', label: 'Projets', icon: FolderKanban },
   { key: 'documents', label: 'Documents', icon: FileText },

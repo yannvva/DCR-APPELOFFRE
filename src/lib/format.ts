@@ -29,3 +29,9 @@ export function isDueSoon(due: string | null | undefined, days = 7) {
   if (!due) return false
   return isWithinInterval(new Date(due), { start: new Date(), end: addDays(new Date(), days) })
 }
+
+/** Jours restants avant une échéance (négatif si dépassée). */
+export function daysUntil(d: string | Date | null | undefined) {
+  if (!d) return 0
+  return Math.ceil((new Date(d).getTime() - Date.now()) / 86400000)
+}

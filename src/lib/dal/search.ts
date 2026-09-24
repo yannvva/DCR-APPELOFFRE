@@ -5,7 +5,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 type Ctx = { supabase: SupabaseClient; org: { id: string } }
 
 export interface SearchResult {
-  type: 'account' | 'contact' | 'opportunity' | 'project' | 'task' | 'document'
+  type: 'account' | 'contact' | 'opportunity' | 'project' | 'task' | 'document' | 'tender'
   id: string
   label: string
   sub?: string
@@ -15,7 +15,7 @@ export async function globalSearch(ctx: Ctx, q: string): Promise<SearchResult[]>
   const term = `%${q}%`
   const orgId = ctx.org.id
 
-  const [accounts, contacts, opps, projects, tasks, docs] = await Promise.all([
+  const [accounts, contacts, opps, projects, tasks, docs, tenders] = await Promise.all([
     ctx.supabase.from('accounts').select('id, name').eq('organization_id', orgId).ilike('name', term).limit(6),
     ctx.supabase
       .from('contacts')
@@ -27,6 +27,12 @@ export async function globalSearch(ctx: Ctx, q: string): Promise<SearchResult[]>
     ctx.supabase.from('projects').select('id, name, code').eq('organization_id', orgId).or(`name.ilike.${term},code.ilike.${term}`).limit(6),
     ctx.supabase.from('tasks').select('id, title').eq('organization_id', orgId).ilike('title', term).limit(6),
     ctx.supabase.from('documents').select('id, name').eq('organization_id', orgId).ilike('name', term).limit(6),
+    ctx.supabase
+      .from('tenders')
+      .select('id, title, reference')
+      .eq('organization_id', orgId)
+      .or(`title.ilike.${term},reference.ilike.${term}`)
+      .limit(6),
   ])
 
   const results: SearchResult[] = []
@@ -43,6 +49,8 @@ export async function globalSearch(ctx: Ctx, q: string): Promise<SearchResult[]>
     results.push({ type: 'project', id: r.id, label: r.name, sub: r.code })
   for (const r of tasks.data ?? []) results.push({ type: 'task', id: r.id, label: r.title })
   for (const r of docs.data ?? []) results.push({ type: 'document', id: r.id, label: r.name })
+  for (const r of tenders.data ?? [])
+    results.push({ type: 'tender', id: r.id, label: r.title, sub: r.reference ?? undefined })
   return results
 }
 
@@ -94,6 +102,15 @@ export async function searchLinkableEntities(
       const { data } = await ctx.supabase
         .from('tasks').select('id, title').eq('organization_id', orgId).ilike('title', term).limit(limit)
       return (data ?? []).map((r: { id: string; title: string }) => ({ id: r.id, label: r.title }))
+    }
+    case 'tender': {
+      const { data } = await ctx.supabase
+        .from('tenders').select('id, title, reference').eq('organization_id', orgId)
+        .or(`title.ilike.${term},reference.ilike.${term}`).limit(limit)
+      return (data ?? []).map((r: { id: string; title: string; reference: string | null }) => ({
+        id: r.id,
+        label: r.reference ? `${r.reference} — ${r.title}` : r.title,
+      }))
     }
     default:
       return []

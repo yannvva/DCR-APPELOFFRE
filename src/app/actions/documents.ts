@@ -40,6 +40,10 @@ export async function uploadDocument(orgSlug: string, formData: FormData): Promi
   const folder = sanitizeFolder((formData.get('folder') as string) || '/')
   const entityType = formData.get('entityType') as string | null
   const entityId = formData.get('entityId') as string | null
+  const category = (formData.get('category') as string) || 'autre'
+  const documentType = (formData.get('documentType') as string) || null
+  const validUntil = (formData.get('validUntil') as string) || null
+  const isReusable = formData.get('isReusable') === 'true'
 
   const docId = crypto.randomUUID()
   const storagePath = `org_${org.id}/${docId}/${file.name.replace(/[^\w.()-]/g, '_')}`
@@ -59,6 +63,10 @@ export async function uploadDocument(orgSlug: string, formData: FormData): Promi
       storage_path: storagePath,
       mime_type: file.type,
       size_bytes: file.size,
+      category,
+      document_type: documentType,
+      valid_until: validUntil,
+      is_reusable: isReusable,
       uploaded_by: user.id,
     })
     .select('id')

@@ -5,8 +5,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { ActivityFeed } from '@/components/activity-feed'
 import { listActivity } from '@/lib/dal/activity'
-import { Users, FolderKanban, CheckSquare, FileText, AlertTriangle, Euro } from 'lucide-react'
-import { formatDate, formatEuros, isOverdue } from '@/lib/format'
+import { listUpcomingTenders, listExpiringDocuments } from '@/lib/dal/tenders'
+import { Users, FolderKanban, CheckSquare, FileText, AlertTriangle, Euro, FileSignature, Clock } from 'lucide-react'
+import { formatDate, formatEuros, isOverdue, daysUntil } from '@/lib/format'
 
 export default async function DashboardPage({
   params,
@@ -26,6 +27,8 @@ export default async function DashboardPage({
     myTasks,
     openOpps,
     activity,
+    upcomingTenders,
+    expiringDocs,
   ] = await Promise.all([
     supabase.from('accounts').select('id', { count: 'exact', head: true }).eq('organization_id', org.id),
     supabase.from('projects').select('id', { count: 'exact', head: true }).eq('organization_id', org.id).eq('status', 'active'),
@@ -54,6 +57,8 @@ export default async function DashboardPage({
       .order('expected_close_date')
       .limit(8),
     listActivity(ctx, { limit: 12 }),
+    listUpcomingTenders(ctx, 7, 8),
+    listExpiringDocuments(ctx, 15, 8),
   ])
 
   type TaskRow = {
@@ -113,6 +118,94 @@ export default async function DashboardPage({
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <FileSignature className="size-4 text-destructive" />
+              Appels d’offres — deadlines J-7
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {upcomingTenders.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                Aucune deadline d’appel d’offres sous 7 jours.
+              </p>
+            ) : (
+              <ul className="divide-y divide-border">
+                {upcomingTenders.map((t) => {
+                  const days = daysUntil(t.response_deadline)
+                  return (
+                    <li key={t.id} className="flex items-center justify-between py-2 text-sm">
+                      <Link
+                        href={`/${orgSlug}/tenders/${t.id}`}
+                        className="min-w-0 truncate hover:underline"
+                      >
+                        {t.title}
+                        {t.buyer?.name && (
+                          <span className="ml-1.5 text-xs text-muted-foreground">
+                            {t.buyer.name}
+                          </span>
+                        )}
+                      </Link>
+                      <Badge
+                        variant="secondary"
+                        className={
+                          days < 0
+                            ? 'ml-3 shrink-0 bg-red-500/15 text-[10px] text-red-600'
+                            : days <= 3
+                              ? 'ml-3 shrink-0 bg-red-500/15 text-[10px] text-red-600'
+                              : 'ml-3 shrink-0 bg-amber-500/15 text-[10px] text-amber-600'
+                        }
+                      >
+                        {days < 0 ? `Dépassée J+${Math.abs(days)}` : `J-${days}`}
+                      </Badge>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Clock className="size-4 text-amber-500" />
+              Pièces expirées ou à renouveler
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {expiringDocs.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                Aucune pièce n’expire sous 15 jours.
+              </p>
+            ) : (
+              <ul className="divide-y divide-border">
+                {expiringDocs.map((d) => (
+                  <li key={d.id} className="flex items-center justify-between py-2 text-sm">
+                    <Link
+                      href={`/${orgSlug}/documents`}
+                      className="min-w-0 truncate hover:underline"
+                    >
+                      {d.name}
+                    </Link>
+                    <span
+                      className={
+                        new Date(d.valid_until) < new Date()
+                          ? 'ml-3 shrink-0 text-xs text-destructive'
+                          : 'ml-3 shrink-0 text-xs text-amber-600'
+                      }
+                    >
+                      {new Date(d.valid_until) < new Date() ? 'Expiré ' : ''}
+                      {formatDate(d.valid_until)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">

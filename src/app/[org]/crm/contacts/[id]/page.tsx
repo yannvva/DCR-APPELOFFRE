@@ -36,7 +36,12 @@ export default async function ContactDetailPage({
   return (
     <div className="mx-auto max-w-5xl space-y-6 p-6">
       <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon-sm" render={<Link href={`/${orgSlug}/crm/contacts`} />}>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          nativeButton={false}
+          render={<Link href={`/${orgSlug}/crm/contacts`} />}
+        >
           <ArrowLeft className="size-4" />
         </Button>
         <div className="min-w-0 flex-1">

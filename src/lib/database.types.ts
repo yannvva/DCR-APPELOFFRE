@@ -660,6 +660,105 @@ export type Database = {
           },
         ]
       }
+      checklist_template_items: {
+        Row: {
+          category: string
+          id: string
+          label: string
+          organization_id: string
+          position: number
+          requirement: string
+          requires_chiffrage: boolean
+          requires_signature: boolean
+          template_id: string
+        }
+        Insert: {
+          category?: string
+          id?: string
+          label: string
+          organization_id: string
+          position?: number
+          requirement?: string
+          requires_chiffrage?: boolean
+          requires_signature?: boolean
+          template_id: string
+        }
+        Update: {
+          category?: string
+          id?: string
+          label?: string
+          organization_id?: string
+          position?: number
+          requirement?: string
+          requires_chiffrage?: boolean
+          requires_signature?: boolean
+          template_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "checklist_template_items_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "checklist_template_items_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "checklist_templates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      checklist_templates: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          is_default: boolean
+          market_type: string | null
+          name: string
+          organization_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_default?: boolean
+          market_type?: string | null
+          name: string
+          organization_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_default?: boolean
+          market_type?: string | null
+          name?: string
+          organization_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "checklist_templates_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "checklist_templates_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       contacts: {
         Row: {
           account_id: string | null
@@ -771,43 +870,73 @@ export type Database = {
       }
       documents: {
         Row: {
+          category: string
           checksum: string | null
           created_at: string
+          document_type: string | null
           folder_path: string
           id: string
+          is_reusable: boolean
+          is_signed: boolean
           mime_type: string
           name: string
           organization_id: string
+          rejection_reason: string | null
           size_bytes: number
+          status: string
           storage_path: string
           updated_at: string
           uploaded_by: string
+          valid_until: string | null
+          validated_at: string | null
+          validated_by: string | null
+          version: number
         }
         Insert: {
+          category?: string
           checksum?: string | null
           created_at?: string
+          document_type?: string | null
           folder_path?: string
           id?: string
+          is_reusable?: boolean
+          is_signed?: boolean
           mime_type: string
           name: string
           organization_id: string
+          rejection_reason?: string | null
           size_bytes: number
+          status?: string
           storage_path: string
           updated_at?: string
           uploaded_by: string
+          valid_until?: string | null
+          validated_at?: string | null
+          validated_by?: string | null
+          version?: number
         }
         Update: {
+          category?: string
           checksum?: string | null
           created_at?: string
+          document_type?: string | null
           folder_path?: string
           id?: string
+          is_reusable?: boolean
+          is_signed?: boolean
           mime_type?: string
           name?: string
           organization_id?: string
+          rejection_reason?: string | null
           size_bytes?: number
+          status?: string
           storage_path?: string
           updated_at?: string
           uploaded_by?: string
+          valid_until?: string | null
+          validated_at?: string | null
+          validated_by?: string | null
+          version?: number
         }
         Relationships: [
           {
@@ -820,6 +949,13 @@ export type Database = {
           {
             foreignKeyName: "documents_uploaded_by_fkey"
             columns: ["uploaded_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "documents_validated_by_fkey"
+            columns: ["validated_by"]
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
@@ -1326,6 +1462,7 @@ export type Database = {
         Row: {
           created_at: string
           invited_by: string | null
+          job_role: string | null
           joined_at: string
           organization_id: string
           role: string
@@ -1335,6 +1472,7 @@ export type Database = {
         Insert: {
           created_at?: string
           invited_by?: string | null
+          job_role?: string | null
           joined_at?: string
           organization_id: string
           role?: string
@@ -1344,6 +1482,7 @@ export type Database = {
         Update: {
           created_at?: string
           invited_by?: string | null
+          job_role?: string | null
           joined_at?: string
           organization_id?: string
           role?: string
@@ -1930,6 +2069,540 @@ export type Database = {
           },
         ]
       }
+      tender_alerts: {
+        Row: {
+          assignee_id: string | null
+          check_key: string
+          created_at: string
+          due_date: string | null
+          element_ref: string | null
+          id: string
+          message: string
+          organization_id: string
+          recommended_action: string | null
+          resolved_at: string | null
+          resolved_by: string | null
+          severity: string
+          source: string
+          tender_id: string
+        }
+        Insert: {
+          assignee_id?: string | null
+          check_key: string
+          created_at?: string
+          due_date?: string | null
+          element_ref?: string | null
+          id?: string
+          message: string
+          organization_id: string
+          recommended_action?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          severity: string
+          source?: string
+          tender_id: string
+        }
+        Update: {
+          assignee_id?: string | null
+          check_key?: string
+          created_at?: string
+          due_date?: string | null
+          element_ref?: string | null
+          id?: string
+          message?: string
+          organization_id?: string
+          recommended_action?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          severity?: string
+          source?: string
+          tender_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tender_alerts_assignee_id_fkey"
+            columns: ["assignee_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tender_alerts_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tender_alerts_resolved_by_fkey"
+            columns: ["resolved_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tender_alerts_tender_id_fkey"
+            columns: ["tender_id"]
+            isOneToOne: false
+            referencedRelation: "tenders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tender_checklist_items: {
+        Row: {
+          assignee_id: string | null
+          category: string
+          comment: string | null
+          created_at: string
+          document_id: string | null
+          id: string
+          internal_deadline: string | null
+          label: string
+          organization_id: string
+          position: number
+          requirement: string
+          requires_chiffrage: boolean
+          requires_signature: boolean
+          risk_level: string
+          status: string
+          tender_id: string
+          updated_at: string
+          validated_at: string | null
+          validated_by: string | null
+        }
+        Insert: {
+          assignee_id?: string | null
+          category?: string
+          comment?: string | null
+          created_at?: string
+          document_id?: string | null
+          id?: string
+          internal_deadline?: string | null
+          label: string
+          organization_id: string
+          position?: number
+          requirement?: string
+          requires_chiffrage?: boolean
+          requires_signature?: boolean
+          risk_level?: string
+          status?: string
+          tender_id: string
+          updated_at?: string
+          validated_at?: string | null
+          validated_by?: string | null
+        }
+        Update: {
+          assignee_id?: string | null
+          category?: string
+          comment?: string | null
+          created_at?: string
+          document_id?: string | null
+          id?: string
+          internal_deadline?: string | null
+          label?: string
+          organization_id?: string
+          position?: number
+          requirement?: string
+          requires_chiffrage?: boolean
+          requires_signature?: boolean
+          risk_level?: string
+          status?: string
+          tender_id?: string
+          updated_at?: string
+          validated_at?: string | null
+          validated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tender_checklist_items_assignee_id_fkey"
+            columns: ["assignee_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tender_checklist_items_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tender_checklist_items_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tender_checklist_items_tender_id_fkey"
+            columns: ["tender_id"]
+            isOneToOne: false
+            referencedRelation: "tenders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tender_checklist_items_validated_by_fkey"
+            columns: ["validated_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tender_lots: {
+        Row: {
+          amount_cents: number | null
+          created_at: string
+          id: string
+          number: number
+          organization_id: string
+          selected: boolean
+          tender_id: string
+          title: string
+        }
+        Insert: {
+          amount_cents?: number | null
+          created_at?: string
+          id?: string
+          number: number
+          organization_id: string
+          selected?: boolean
+          tender_id: string
+          title: string
+        }
+        Update: {
+          amount_cents?: number | null
+          created_at?: string
+          id?: string
+          number?: number
+          organization_id?: string
+          selected?: boolean
+          tender_id?: string
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tender_lots_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tender_lots_tender_id_fkey"
+            columns: ["tender_id"]
+            isOneToOne: false
+            referencedRelation: "tenders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tender_members: {
+        Row: {
+          created_at: string
+          organization_id: string
+          role_on_tender: string
+          tender_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          organization_id: string
+          role_on_tender?: string
+          tender_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          organization_id?: string
+          role_on_tender?: string
+          tender_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tender_members_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tender_members_tender_id_fkey"
+            columns: ["tender_id"]
+            isOneToOne: false
+            referencedRelation: "tenders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tender_members_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tender_results: {
+        Row: {
+          awarded_amount_cents: number | null
+          awarded_to: string | null
+          created_at: string
+          created_by: string | null
+          decided_at: string | null
+          loss_reason: string | null
+          organization_id: string
+          outcome: string
+          tender_id: string
+        }
+        Insert: {
+          awarded_amount_cents?: number | null
+          awarded_to?: string | null
+          created_at?: string
+          created_by?: string | null
+          decided_at?: string | null
+          loss_reason?: string | null
+          organization_id: string
+          outcome: string
+          tender_id: string
+        }
+        Update: {
+          awarded_amount_cents?: number | null
+          awarded_to?: string | null
+          created_at?: string
+          created_by?: string | null
+          decided_at?: string | null
+          loss_reason?: string | null
+          organization_id?: string
+          outcome?: string
+          tender_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tender_results_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tender_results_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tender_results_tender_id_fkey"
+            columns: ["tender_id"]
+            isOneToOne: true
+            referencedRelation: "tenders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tender_submissions: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          notes: string | null
+          organization_id: string
+          platform: string | null
+          receipt_document_id: string | null
+          submission_ref: string | null
+          submitted_at: string
+          tender_id: string
+          validated_at: string | null
+          validated_by: string | null
+          version: number
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          notes?: string | null
+          organization_id: string
+          platform?: string | null
+          receipt_document_id?: string | null
+          submission_ref?: string | null
+          submitted_at?: string
+          tender_id: string
+          validated_at?: string | null
+          validated_by?: string | null
+          version?: number
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          notes?: string | null
+          organization_id?: string
+          platform?: string | null
+          receipt_document_id?: string | null
+          submission_ref?: string | null
+          submitted_at?: string
+          tender_id?: string
+          validated_at?: string | null
+          validated_by?: string | null
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tender_submissions_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tender_submissions_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tender_submissions_receipt_document_id_fkey"
+            columns: ["receipt_document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tender_submissions_tender_id_fkey"
+            columns: ["tender_id"]
+            isOneToOne: false
+            referencedRelation: "tenders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tender_submissions_validated_by_fkey"
+            columns: ["validated_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tenders: {
+        Row: {
+          award_criteria: Json
+          buyer_account_id: string | null
+          created_at: string
+          created_by: string | null
+          dce_url: string | null
+          deposit_mode: string | null
+          duration_months: number | null
+          estimated_amount_cents: number | null
+          id: string
+          market_type: string | null
+          notes: string | null
+          organization_id: string
+          platform: string | null
+          procedure_type: string | null
+          published_at: string | null
+          questions_deadline: string | null
+          reference: string | null
+          region: string | null
+          response_deadline: string
+          responsible_id: string | null
+          site_visit_at: string | null
+          site_visit_justified: boolean
+          site_visit_mandatory: boolean
+          status: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          award_criteria?: Json
+          buyer_account_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          dce_url?: string | null
+          deposit_mode?: string | null
+          duration_months?: number | null
+          estimated_amount_cents?: number | null
+          id?: string
+          market_type?: string | null
+          notes?: string | null
+          organization_id: string
+          platform?: string | null
+          procedure_type?: string | null
+          published_at?: string | null
+          questions_deadline?: string | null
+          reference?: string | null
+          region?: string | null
+          response_deadline: string
+          responsible_id?: string | null
+          site_visit_at?: string | null
+          site_visit_justified?: boolean
+          site_visit_mandatory?: boolean
+          status?: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          award_criteria?: Json
+          buyer_account_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          dce_url?: string | null
+          deposit_mode?: string | null
+          duration_months?: number | null
+          estimated_amount_cents?: number | null
+          id?: string
+          market_type?: string | null
+          notes?: string | null
+          organization_id?: string
+          platform?: string | null
+          procedure_type?: string | null
+          published_at?: string | null
+          questions_deadline?: string | null
+          reference?: string | null
+          region?: string | null
+          response_deadline?: string
+          responsible_id?: string | null
+          site_visit_at?: string | null
+          site_visit_justified?: boolean
+          site_visit_mandatory?: boolean
+          status?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tenders_buyer_account_id_fkey"
+            columns: ["buyer_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tenders_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tenders_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tenders_responsible_id_fkey"
+            columns: ["responsible_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       webhook_endpoints: {
         Row: {
           created_at: string
@@ -1981,6 +2654,7 @@ export type Database = {
         Args: { p_name: string; p_slug: string }
         Returns: string
       }
+      create_tender: { Args: { p_payload: Json }; Returns: string }
       has_org_role: {
         Args: { org_id: string; roles: string[] }
         Returns: boolean
@@ -1997,9 +2671,24 @@ export type Database = {
         Returns: string
       }
       next_project_code: { Args: { org_id: string }; Returns: string }
+      run_compliance_checks: { Args: { p_tender_id: string }; Returns: number }
+      seed_default_checklist: {
+        Args: { p_org_id: string; p_tender_id: string }
+        Returns: undefined
+      }
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }
       storage_org_id: { Args: { object_name: string }; Returns: string }
+      tender_readiness: {
+        Args: { p_tender_id: string }
+        Returns: {
+          blockers: string[]
+          pct: number
+          ready: boolean
+          required: number
+          validated: number
+        }[]
+      }
     }
     Enums: {
       [_ in never]: never

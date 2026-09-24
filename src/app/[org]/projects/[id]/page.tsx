@@ -42,7 +42,12 @@ export default async function ProjectDetailPage({
   return (
     <div className="space-y-5 p-6">
       <div className="flex flex-wrap items-center gap-3">
-        <Button variant="ghost" size="icon-sm" render={<Link href={`/${orgSlug}/projects`} />}>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          nativeButton={false}
+          render={<Link href={`/${orgSlug}/projects`} />}
+        >
           <ArrowLeft className="size-4" />
         </Button>
         <div className="min-w-0 flex-1">
