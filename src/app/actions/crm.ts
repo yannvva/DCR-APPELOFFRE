@@ -434,7 +434,7 @@ export async function createTag(orgSlug: string, input: unknown): Promise<Action
     .from('tags')
     .upsert(
       { organization_id: ctx.org.id, name: parsed.data.name, color: parsed.data.color },
-      { onConflict: 'organization_id,lower(name)' },
+      { onConflict: 'organization_id,name_lower' },
     )
     .select('id')
     .single()

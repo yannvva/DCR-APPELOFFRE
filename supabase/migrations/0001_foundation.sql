@@ -7,34 +7,6 @@ create extension if not exists pgcrypto;
 create extension if not exists pg_trgm;
 
 -- ============================================================================
--- 1. Helpers RLS (SECURITY DEFINER — évitent la récursion sur members)
--- ============================================================================
-
-create or replace function public.is_org_member(org_id uuid)
-returns boolean
-language sql stable security definer
-set search_path = public
-as $$
-  select exists (
-    select 1 from public.organization_members m
-    where m.organization_id = org_id and m.user_id = auth.uid()
-  );
-$$;
-
-create or replace function public.has_org_role(org_id uuid, roles text[])
-returns boolean
-language sql stable security definer
-set search_path = public
-as $$
-  select exists (
-    select 1 from public.organization_members m
-    where m.organization_id = org_id
-      and m.user_id = auth.uid()
-      and m.role = any(roles)
-  );
-$$;
-
--- ============================================================================
 -- 2. Identité & organisations
 -- ============================================================================
 
@@ -69,6 +41,36 @@ create table public.organization_members (
 );
 create index organization_members_user_idx on public.organization_members (user_id);
 create index organization_members_role_idx on public.organization_members (organization_id, role);
+
+-- ============================================================================
+-- Helpers RLS (SECURITY DEFINER — évitent la récursion sur members)
+-- Déclarés après organization_members : les fonctions LANGUAGE SQL sont
+-- validées à la création et exigent que la table existe.
+-- ============================================================================
+
+create or replace function public.is_org_member(org_id uuid)
+returns boolean
+language sql stable security definer
+set search_path = public
+as $$
+  select exists (
+    select 1 from public.organization_members m
+    where m.organization_id = org_id and m.user_id = auth.uid()
+  );
+$$;
+
+create or replace function public.has_org_role(org_id uuid, roles text[])
+returns boolean
+language sql stable security definer
+set search_path = public
+as $$
+  select exists (
+    select 1 from public.organization_members m
+    where m.organization_id = org_id
+      and m.user_id = auth.uid()
+      and m.role = any(roles)
+  );
+$$;
 
 alter table public.profiles
   add constraint profiles_default_org_fk
@@ -302,9 +304,10 @@ create table public.tags (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references public.organizations(id) on delete cascade,
   name text not null check (char_length(name) between 1 and 60),
+  name_lower text generated always as (lower(name)) stored,
   color text not null default '#6366f1',
   created_at timestamptz not null default now(),
-  unique (organization_id, lower(name))
+  unique (organization_id, name_lower)
 );
 
 create table public.entity_tags (
@@ -790,7 +793,7 @@ declare
   standard_tables text[] := array[
     'accounts','contacts','pipelines','pipeline_stages','leads','opportunities',
     'interactions','projects','project_members','tasks','task_assignees',
-    'tags','entity_tags','documents','document_links','activity_logs',
+    'task_comments','tags','entity_tags','documents','document_links','activity_logs',
     'notifications','saved_views'
   ];
   admin_tables text[] := array[
