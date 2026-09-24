@@ -15,6 +15,7 @@ import {
   LogOut,
   Sun,
   Moon,
+  Search,
 } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import {
@@ -87,6 +88,19 @@ export function AppSidebar({
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+      </div>
+
+      <div className="px-3 pb-2">
+        <button
+          className="flex w-full items-center gap-2 rounded-md border border-sidebar-border px-2 py-1.5 text-sm text-muted-foreground hover:bg-sidebar-accent"
+          onClick={() =>
+            window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true }))
+          }
+        >
+          <Search className="size-4" />
+          <span className="flex-1 text-left">Rechercher…</span>
+          <kbd className="text-[10px] text-muted-foreground">⌘K</kbd>
+        </button>
       </div>
 
       <nav className="flex-1 space-y-1 px-3">

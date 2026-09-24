@@ -3,13 +3,14 @@
 
 project: nexus
 generated: 2026-09-22
+updated: 2026-09-23
 
 epics:
   epic-1:
     title: Socle & identité multi-tenant
     stories:
       E1-S1: done      # bootstrap Next.js 16 + toolchain + CI
-      E1-S2: done      # migration 0001 : schéma complet + RLS (non appliquée — attente projet Supabase)
+      E1-S2: done      # migration 0001 : schéma complet + RLS (non appliquée — attente link Supabase)
       E1-S3: done      # auth signup/login/logout + callback
       E1-S4: done      # onboarding + create_organization atomique
       E1-S5: done      # app shell, sidebar, org switcher, DAL guards
@@ -18,36 +19,37 @@ epics:
   epic-2:
     title: CRM cœur
     stories:
-      E2-S1: backlog   # accounts
-      E2-S2: backlog   # contacts
-      E2-S3: backlog   # pipeline + opportunités kanban
-      E2-S4: backlog   # tags
-      E2-S5: backlog   # leads
+      E2-S1: done      # accounts : liste paginée, recherche, détail, CRUD
+      E2-S2: done      # contacts : liste, détail, lien entreprise, CRUD
+      E2-S3: done      # pipeline + opportunités kanban drag&drop + conversion → projet
+      E2-S4: done      # tags transverses (create/apply/remove)
+      E2-S5: done      # leads : new→contacted→qualified→converti/perdu
   epic-3:
     title: Projets & tâches
     stories:
-      E3-S1: backlog
-      E3-S2: backlog
-      E3-S3: backlog
-      E3-S4: backlog
-      E3-S5: backlog
+      E3-S1: done      # projets : création, statuts, liaison client
+      E3-S2: done      # conversion opportunité gagnée → projet (+ re-liaison documents)
+      E3-S3: done      # tâches : kanban + liste, priorités, échéances, assignés, sous-tâches
+      E3-S4: done      # commentaires tâche (ajout/suppression)
+      E3-S5: done      # activité sur entités
   epic-4:
     title: Documents
     stories:
-      E4-S1: backlog
-      E4-S2: backlog
-      E4-S3: backlog
-      E4-S4: backlog
+      E4-S1: done      # upload privé Storage (25 Mo, MIME allowlist)
+      E4-S2: done      # dossiers (folder_path) + liste + recherche
+      E4-S3: done      # liens polymorphes vers entités + upload contextuel
+      E4-S4: done      # signed URLs (60 s) + suppression restreinte
   epic-5:
     title: Pilotage & UX système
     stories:
-      E5-S1: backlog   # dashboard (squelette posé)
-      E5-S2: backlog   # recherche globale
-      E5-S3: backlog   # command palette
-      E5-S4: backlog   # dark mode/a11y polish (partiel)
+      E5-S1: done      # dashboard : KPI, tâches en retard, mes tâches, pipeline, activité
+      E5-S2: done      # recherche globale (route API + DAL multi-entités)
+      E5-S3: done      # command palette ⌘K (nav + création + recherche)
+      E5-S4: done      # dark mode (next-themes), skeletons de base, empty states
 
 blockers:
-  - Créer le projet Supabase Cloud (région EU à confirmer) + renseigner .env.local
-  - Lier : npx supabase link --project-ref <ref> && npx supabase db push
+  - npx supabase login (interactif — à lancer par l'utilisateur dans son terminal)
+  - npx supabase link --project-ref dobpbyboqxtvrcueynef && npx supabase db push
   - Régénérer les types : npx supabase gen types --linked > src/lib/database.types.ts
+  - Rotation de la clé sb_secret_ (exposée en conversation)
   - Déployer Vercel + connecter repo GitHub
