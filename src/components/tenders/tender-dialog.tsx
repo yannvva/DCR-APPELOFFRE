@@ -133,6 +133,14 @@ export function TenderDialog({
       setValue('region', d.region)
       found.push('région')
     }
+    if (d.procedureType) {
+      setValue('procedureType', d.procedureType)
+      found.push('procédure')
+    }
+    if (d.marketType) {
+      setMarketType(d.marketType)
+      found.push('type de marché')
+    }
     setValue('dceUrl', d.url)
 
     // Acheteur : correspondance floue avec les comptes, sinon note

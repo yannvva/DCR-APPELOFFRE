@@ -8,6 +8,8 @@ export interface TenderImport {
   publishedAt?: string // 'YYYY-MM-DD'
   platform?: string
   region?: string
+  procedureType?: string
+  marketType?: 'travaux' | 'fournitures' | 'services' | 'mixte'
   excerpt?: string
   url: string
 }
@@ -18,6 +20,7 @@ const MAX_BYTES = 2_000_000
 const PLATFORM_NAMES: [RegExp, string][] = [
   [/marchesonline\.com/i, 'Marchés Online'],
   [/francemarches\.com/i, 'France Marchés'],
+  [/maximilien\.fr|marches-securises\.fr|atexo/i, 'Maximilien'],
   [/place\.gouv\.fr|marches-publics\.gouv\.fr/i, 'PLACE'],
   [/aws-avis\.com/i, 'AWS Avis'],
   [/boamp\.fr/i, 'BOAMP'],
@@ -117,12 +120,16 @@ function capture(pattern: RegExp, text: string) {
   return m ? decodeEntities(m[1]).replace(/\s{2,}/g, ' ').trim() : undefined
 }
 
-/** Une référence plausible : majuscules/chiffres/séparateurs, au moins un chiffre. */
+/** Une référence plausible : majuscules/chiffres/séparateurs, au moins un chiffre.
+ *  Parcourt tous les matchs — un libellé « référence » dans le menu ne doit pas
+ *  masquer la vraie référence plus loin dans la page. */
 function captureRef(pattern: RegExp, text: string) {
-  const m = pattern.exec(text)
-  if (!m) return undefined
-  const v = decodeEntities(m[1]).trim()
-  return /^[A-Z0-9][A-Z0-9\-_./]{2,45}$/.test(v) && /\d/.test(v) ? v : undefined
+  const flags = pattern.flags.includes('g') ? pattern.flags : pattern.flags + 'g'
+  for (const m of text.matchAll(new RegExp(pattern.source, flags))) {
+    const v = decodeEntities(m[1]).trim()
+    if (/^[A-Z0-9][A-Z0-9\-_./]{2,45}$/.test(v) && /\d/.test(v)) return v
+  }
+  return undefined
 }
 
 export async function importTenderFromUrl(rawUrl: string): Promise<TenderImport> {
@@ -166,8 +173,19 @@ export async function importTenderFromUrl(rawUrl: string): Promise<TenderImport>
   // Plateforme
   out.platform = PLATFORM_NAMES.find(([re]) => re.test(url.hostname))?.[1] ?? url.hostname
 
-  // Titre : og:title > h1 > <title>
+  // Borne « début du libellé suivant » — le texte aplati n'a plus de sauts de ligne.
+  const NEXT_LABEL =
+    /(?=\s+(?:objet|intitul[ée]|r[ée]f[ée]rence|organisme|entit[ée]|service|type d'annonce|cat[ée]gorie|proc[ée]dure|date|section|adresse|code postal|ville|pays|contact|courriel|e-mail|t[ée]l[ée]phone|site web|descriptif|d[ée]partement|cpv|nature|forme juridique|num[ée]ro)\b|\||$)/
+
+  // Titre : libellé « Intitulé : » / « Objet : » (avis structurés) > og:title > h1 > <title>
+  const labelTitle =
+    capture(
+      new RegExp(`intitul[ée]\\s*[:\\-–]\\s*(.{4,200}?)${NEXT_LABEL.source}`, 'i'),
+      text,
+    ) ??
+    capture(new RegExp(`\\bobjet\\s*[:\\-–]\\s*(.{4,200}?)${NEXT_LABEL.source}`, 'i'), text)
   out.title =
+    labelTitle ||
     meta(html, 'og:title', 'twitter:title') ||
     decodeEntities(html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i)?.[1].replace(/<[^>]+>/g, '') ?? '') ||
     decodeEntities(html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? '')
@@ -186,6 +204,10 @@ export async function importTenderFromUrl(rawUrl: string): Promise<TenderImport>
       text,
       /date limite (?:de )?(?:remise|d[ée]p[ôo]t|r[ée]ception)(?: des| d'| de l')?\s*(?:offres?|plis?|candidatures?|propositions?)?/i,
     ) ??
+    findDateNear(
+      text,
+      /(?:date(?:\s+et\s+heure)?\s+)?limite\s+de\s+(?:remise|r[ée]ception|d[ée]p[ôo]t)\s+des?\s*(?:plis?|offres?|candidatures?|propositions?)/i,
+    ) ??
     findDateNear(text, /(?:date de )?cl[ôo]ture/i) ??
     findDateNear(text, /date limite/i)
 
@@ -194,15 +216,19 @@ export async function importTenderFromUrl(rawUrl: string): Promise<TenderImport>
     findDateNear(text, /parution|diffus[ée]e? le/i)
   if (pub) out.publishedAt = pub.slice(0, 10)
 
-  // Acheteur : « Nom officiel : X » (structure JOUE/marchés online), puis libellés génériques.
-  // La capture s'arrête au libellé du champ suivant (le texte est aplati sur une ligne).
+  // Acheteur : « Nom officiel : X » (JOUE), « Organisme : X » (Maximilien/Atexo),
+  // puis libellés génériques. La capture s'arrête au libellé du champ suivant.
   const NEXT_FIELD =
-    /(?=\s+(?:num[ée]ro d'enregistrement|forme juridique|adresse|code postal|ville|pays|point de contact|t[ée]l[ée]phone|courriel|e-mail|site web|section\b)|\.|,|\||$)/
+    /(?=\s+(?:num[ée]ro d'enregistrement|forme juridique|entit[ée]\s+publique|service|adresse|code postal|ville|pays|point de contact|contact|t[ée]l[ée]phone|courriel|e-mail|site web|type d'annonce|cat[ée]gorie|proc[ée]dure|objet|intitul[ée]|r[ée]f[ée]rence|date|d[ée]partement|descriptif|nature|section)\b|\.|,|\||$)/
   out.buyer =
     capture(new RegExp(`nom officiel\\s*[:\\-–]?\\s*(.{3,140}?)${NEXT_FIELD.source}`, 'i'), text) ??
     capture(new RegExp(`ma[îi]tre d'ouvrage\\s*[:\\-–]?\\s*(.{3,140}?)${NEXT_FIELD.source}`, 'i'), text) ??
     capture(
-      new RegExp(`(?:organisme\\s+)?acheteur(?:\\s+public)?\\s*[:\\-–]\\s*(.{3,140}?)${NEXT_FIELD.source}`, 'i'),
+      new RegExp(`organisme\\s*[:\\-–]\\s*(.{3,140}?)${NEXT_FIELD.source}`, 'i'),
+      text,
+    ) ??
+    capture(
+      new RegExp(`acheteur(?:\\s+public)?\\s*[:\\-–]\\s*(.{3,140}?)${NEXT_FIELD.source}`, 'i'),
       text,
     )
 
@@ -214,6 +240,22 @@ export async function importTenderFromUrl(rawUrl: string): Promise<TenderImport>
       text,
     )
 
+  // Type d'annonce (procédure) et catégorie principale (type de marché)
+  out.procedureType = capture(
+    new RegExp(`type d'annonce\\s*[:\\-–]\\s*(.{3,120}?)${NEXT_LABEL.source}`, 'i'),
+    text,
+  )
+  const cat = capture(/cat[ée]gorie principale\s*[:\-–]?\s*(\w{3,20})/i, text)?.toLowerCase()
+  if (cat) {
+    out.marketType = cat.startsWith('travaux')
+      ? 'travaux'
+      : cat.startsWith('fournit')
+        ? 'fournitures'
+        : cat.startsWith('service') || cat.startsWith('prestation')
+          ? 'services'
+          : undefined
+  }
+
   // Département(s) de publication / région — liste stricte de codes « 94, 75 »
   out.region =
     capture(
@@ -221,7 +263,9 @@ export async function importTenderFromUrl(rawUrl: string): Promise<TenderImport>
       text,
     ) ??
     capture(/d[ée]partement\s*[:\-–]\s*([^\n]{2,80}?)(?:\.|,|\||$)/i, text) ??
-    capture(/r[ée]gion\s*[:\-–]\s*([^\n]{2,80}?)(?:\.|,|\||$)/i, text)
+    capture(/r[ée]gion\s*[:\-–]\s*([^\n]{2,80}?)(?:\.|,|\||$)/i, text) ??
+    // Fallback : code postal dans le nom de l'acheteur « …(94000 - Créteil) »
+    out.buyer?.match(/\((\d{2})\d{3}\s*[-–]/)?.[1]
 
   return out
 }

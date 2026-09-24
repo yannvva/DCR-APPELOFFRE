@@ -34,6 +34,21 @@ describe('importTenderFromUrl', () => {
     expect(d.responseDeadline).toMatch(/^2025-12-10T\d{2}:\d{2}$/)
   })
 
+  it('extrait les données d’une consultation Maximilien (Atexo)', async () => {
+    mockFetchHtml(fixture('maximilien.html'))
+    const d = await importTenderFromUrl(
+      'https://marches.maximilien.fr/entreprise/consultation/945739?orgAcronyme=a8z',
+    )
+    expect(d.platform).toBe('Maximilien')
+    expect(d.title).toBe('Travaux de Régulation du Trafic')
+    expect(d.reference).toBe('DVM-2026-07')
+    expect(d.buyer).toContain('Conseil départemental du Val-de-Marne')
+    expect(d.region).toBe('94')
+    expect(d.responseDeadline).toBe('2026-10-30T16:00')
+    expect(d.procedureType).toContain("appel public")
+    expect(d.marketType).toBe('travaux')
+  })
+
   it('rejette une URL non http(s)', async () => {
     await expect(importTenderFromUrl('file:///etc/passwd')).rejects.toThrow()
   })
