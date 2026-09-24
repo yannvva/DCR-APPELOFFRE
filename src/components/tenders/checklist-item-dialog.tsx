@@ -1,11 +1,10 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useRef, useState, useTransition } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { toast } from 'sonner'
-import { CalendarClock, FileText, ShieldAlert, Upload } from 'lucide-react'
-import { useRef } from 'react'
+import { CalendarClock, FileText, ScanSearch, ShieldAlert, Upload } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -30,6 +29,7 @@ import {
   setChecklistItemStatus,
   updateChecklistItem,
   uploadAndAttachToChecklistItem,
+  analyzeTenderDocument,
 } from '@/app/actions/tenders'
 import { checklistItemSchema } from '@/lib/validation/domain'
 import {
@@ -46,6 +46,7 @@ import type {
   Document,
   TenderChecklistItem,
 } from '@/lib/types'
+import type { RcAnalysis } from '@/lib/rc-analysis'
 import type { z } from 'zod'
 
 type Values = z.output<typeof checklistItemSchema>
@@ -101,6 +102,8 @@ export function ChecklistItemDialog({
   const [forceReason, setForceReason] = useState('')
   const [dragOver, setDragOver] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [analyzing, setAnalyzing] = useState(false)
+  const [analysis, setAnalysis] = useState<RcAnalysis | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const {
     register,
@@ -145,6 +148,20 @@ export function ChecklistItemDialog({
     setUploading(false)
     if (res?.error) toast.error(res.error)
     else toast.success(`${file.name} attaché`)
+  }
+
+  async function handleAnalyze() {
+    if (!item.document_id) return
+    setAnalyzing(true)
+    setAnalysis(null)
+    const res = await analyzeTenderDocument(orgSlug, item.document_id)
+    setAnalyzing(false)
+    if (res.error || !res.data) {
+      toast.error(res.error ?? 'Analyse impossible.')
+      return
+    }
+    setAnalysis(res.data)
+    toast.success('Analyse terminée')
   }
 
   async function onSave(values: Values) {
@@ -302,6 +319,147 @@ export function ChecklistItemDialog({
             </>
           )}
         </div>
+
+        {/* Analyse du document (RC) */}
+        {item.document_id && item.document && (
+          <div className="space-y-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={analyzing}
+              onClick={() => void handleAnalyze()}
+              className="w-full"
+            >
+              <ScanSearch className="size-4" />
+              {analyzing ? 'Analyse en cours…' : 'Analyser le document'}
+            </Button>
+
+            {analysis && (
+              <div className="space-y-3 rounded-lg border border-border bg-muted/30 p-3 text-sm">
+                {analysis.summary && (
+                  <p className="font-medium text-foreground">{analysis.summary}</p>
+                )}
+
+                {/* Visite obligatoire */}
+                {analysis.siteVisit.mandatory && (
+                  <div className="rounded-md bg-amber-500/10 p-2">
+                    <p className="font-medium text-amber-700 dark:text-amber-300">
+                      📍 Visite de site obligatoire
+                    </p>
+                    {analysis.siteVisit.date && (
+                      <p className="text-xs">Date : {analysis.siteVisit.date}</p>
+                    )}
+                    {analysis.siteVisit.details && (
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        {analysis.siteVisit.details.slice(0, 200)}
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {/* Dates clés */}
+                {analysis.dates.length > 0 && (
+                  <div>
+                    <p className="mb-1 text-xs font-semibold uppercase text-muted-foreground">
+                      Dates clés
+                    </p>
+                    <ul className="space-y-0.5">
+                      {analysis.dates.slice(0, 8).map((d, i) => (
+                        <li key={i} className="flex gap-2 text-xs">
+                          <span className="font-medium">{d.label} :</span>
+                          <span>{d.value}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Contacts */}
+                {analysis.contacts.length > 0 && (
+                  <div>
+                    <p className="mb-1 text-xs font-semibold uppercase text-muted-foreground">
+                      Contacts
+                    </p>
+                    <ul className="space-y-0.5">
+                      {analysis.contacts.map((c, i) => (
+                        <li key={i} className="text-xs">
+                          {c.name}
+                          {c.role && (
+                            <span className="text-muted-foreground"> — {c.role}</span>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Emails et téléphones */}
+                {(analysis.emails.length > 0 || analysis.phones.length > 0) && (
+                  <div className="grid grid-cols-2 gap-2">
+                    {analysis.emails.length > 0 && (
+                      <div>
+                        <p className="mb-1 text-xs font-semibold uppercase text-muted-foreground">
+                          Emails
+                        </p>
+                        <ul className="space-y-0.5">
+                          {analysis.emails.slice(0, 5).map((e, i) => (
+                            <li key={i} className="break-all text-xs">{e}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {analysis.phones.length > 0 && (
+                      <div>
+                        <p className="mb-1 text-xs font-semibold uppercase text-muted-foreground">
+                          Téléphones
+                        </p>
+                        <ul className="space-y-0.5">
+                          {analysis.phones.slice(0, 5).map((p, i) => (
+                            <li key={i} className="text-xs">{p}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Critères d'attribution */}
+                {analysis.criteria.length > 0 && (
+                  <div>
+                    <p className="mb-1 text-xs font-semibold uppercase text-muted-foreground">
+                      {"Critères d'attribution"}
+                    </p>
+                    <ul className="space-y-0.5">
+                      {analysis.criteria.map((c, i) => (
+                        <li key={i} className="text-xs">{c}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Sections clés */}
+                {analysis.keySections.length > 0 && (
+                  <div>
+                    <p className="mb-1 text-xs font-semibold uppercase text-muted-foreground">
+                      Sections détectées
+                    </p>
+                    <div className="space-y-1.5">
+                      {analysis.keySections.map((s, i) => (
+                        <details key={i} className="rounded-md bg-background/50 p-1.5">
+                          <summary className="cursor-pointer text-xs font-medium hover:underline">
+                            {s.title}
+                          </summary>
+                          <p className="mt-1 text-xs text-muted-foreground">{s.excerpt}</p>
+                        </details>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Forcer la validation */}
         {canEdit && item.status !== 'valide' && (

@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { importTenderFromUrl, type TenderImport } from '@/lib/tender-import'
+import { analyzeRcDocument, type RcAnalysis } from '@/lib/rc-analysis'
 import { requireMembership } from '@/lib/dal/auth'
 import { audit } from '@/lib/audit'
 import {
@@ -50,6 +51,24 @@ export async function fetchTenderFromUrl(
     return { error: e instanceof Error ? e.message : 'Échec de la récupération de la page.' }
   }
 }
+
+// ============================ ANALYSE RC ============================
+
+export async function analyzeTenderDocument(
+  orgSlug: string,
+  documentId: string,
+): Promise<{ data?: RcAnalysis; error?: string }> {
+  const ctx = await requireMembership(orgSlug, 'member')
+  if (!ctx) return { error: 'Accès refusé.' }
+  try {
+    const data = await analyzeRcDocument(ctx.supabase, ctx.org.id, documentId)
+    return { data }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : 'Échec de l\'analyse.' }
+  }
+}
+
+// ============================ TENDERS ============================
 
 export async function createTender(orgSlug: string, input: unknown): Promise<ActionState> {
   const ctx = await requireMembership(orgSlug, 'member')
