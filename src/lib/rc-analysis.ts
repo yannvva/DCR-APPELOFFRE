@@ -37,7 +37,9 @@ export async function analyzeRcDocument(
   let text = ''
   if (doc.mime_type === 'application/pdf') {
     const buf = Buffer.from(await fileData.arrayBuffer())
-    const pdfParse = (await import('pdf-parse')).default
+    // Contournement : pdf-parse v1 tente de charger un fichier test à l'import.
+    // On importe directement lib/pdf-parse.js pour éviter ce bug.
+    const pdfParse = (await import('pdf-parse/lib/pdf-parse.js')).default
     const pdf = await pdfParse(buf)
     text = pdf.text
   } else if (doc.mime_type?.startsWith('text/')) {
