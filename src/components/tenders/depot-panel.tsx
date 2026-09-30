@@ -59,6 +59,9 @@ export function DepotPanel({
         return
       }
       toast.success('Dépôt enregistré')
+      setPlatform('')
+      setSubmissionRef('')
+      setConfirm(false)
     })
   }
 

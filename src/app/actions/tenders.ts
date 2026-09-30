@@ -1,11 +1,19 @@
 ﻿'use server'
 
+import { z } from 'zod'
 import { revalidatePath } from 'next/cache'
+import { revalidateTenderPages } from '@/lib/revalidate'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { importTenderFromUrl, type TenderImport } from '@/lib/tender-import'
+import { importTenderFromUrl, normalizeHttpUrl, type TenderImport } from '@/lib/tender-import'
 import { analyzeRcDocument, type RcAnalysis } from '@/lib/rc-analysis'
 import { requireMembership } from '@/lib/dal/auth'
 import { audit } from '@/lib/audit'
+import { completeJson } from '@/lib/ai/deepseek'
+import { normalizeAnalysis } from '@/lib/dce/normalize'
+import {
+  attachCompanyDocsToChecklist,
+  syncChecklistItems,
+} from '@/lib/checklist-attach'
 import {
   checklistItemSchema,
   submissionSchema,
@@ -33,13 +41,10 @@ export async function fetchTenderFromUrl(
 ): Promise<{ data?: TenderImport; error?: string }> {
   const ctx = await requireMembership(orgSlug, 'member')
   if (!ctx) return { error: 'Accès refusé.' }
+  const parsedUrl = normalizeHttpUrl(url)
+  if (!parsedUrl) return { error: 'URL invalide.' }
   try {
-    new URL(url.trim())
-  } catch {
-    return { error: 'URL invalide.' }
-  }
-  try {
-    const data = await importTenderFromUrl(url)
+    const data = await importTenderFromUrl(parsedUrl.toString())
     if (!data.title && !data.responseDeadline) {
       return {
         error:
@@ -70,19 +75,64 @@ export async function analyzeTenderDocument(
 
 // ============================ TENDERS ============================
 
+const normBuyer = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '')
+
+/** Acheteur : id fourni → compte existant par nom → création du compte.
+ *  Les avis importés donnent un nom, pas un id : sans cela l'acheteur
+ *  finissait en texte libre dans les notes. */
+async function resolveBuyerAccountId(
+  ctx: { supabase: SupabaseClient; org: { id: string }; user: { id: string } },
+  buyerAccountId: string | '' | undefined,
+  buyerName: string | '' | undefined,
+): Promise<string | null> {
+  if (buyerAccountId) return buyerAccountId
+  const name = buyerName?.trim()
+  if (!name) return null
+  const { data: accounts } = await ctx.supabase
+    .from('accounts')
+    .select('id, name')
+    .eq('organization_id', ctx.org.id)
+    .limit(200)
+  const n = normBuyer(name)
+  const match = (accounts ?? []).find(
+    (a) => normBuyer(a.name).includes(n) || n.includes(normBuyer(a.name)),
+  )
+  if (match) return match.id
+  const { data: created } = await ctx.supabase
+    .from('accounts')
+    .insert({
+      organization_id: ctx.org.id,
+      name: name.slice(0, 200),
+      created_by: ctx.user.id,
+    })
+    .select('id')
+    .single()
+  if (created) {
+    await audit(ctx.supabase, {
+      organizationId: ctx.org.id,
+      action: 'account.created',
+      entityType: 'account',
+      entityId: created.id,
+      metadata: { name: name.slice(0, 200), origin: 'tender_import' },
+    })
+  }
+  return created?.id ?? null
+}
+
 export async function createTender(orgSlug: string, input: unknown): Promise<ActionState> {
   const ctx = await requireMembership(orgSlug, 'member')
   if (!ctx) return { error: 'Accès refusé.' }
   const parsed = tenderSchema.safeParse(input)
   if (!parsed.success) return { fieldErrors: parsed.error.flatten().fieldErrors }
   const d = parsed.data
+  const buyerAccountId = await resolveBuyerAccountId(ctx, d.buyerAccountId, d.buyerName)
 
   const { data, error } = await ctx.supabase.rpc('create_tender', {
     p_payload: {
       organization_id: ctx.org.id,
       title: d.title,
       reference: d.reference || null,
-      buyer_account_id: d.buyerAccountId || null,
+      buyer_account_id: buyerAccountId,
       platform: d.platform || null,
       dce_url: d.dceUrl || null,
       published_at: d.publishedAt || null,
@@ -113,12 +163,26 @@ export async function createTender(orgSlug: string, input: unknown): Promise<Act
   })
 
   if (error) return fail(error, 'Erreur lors de la création de l’appel d’offres.')
+  // Rattache d'emblée les pièces du kit candidature société (Kbis, URSSAF,
+  // attestations, DC1/DC2…) aux lignes de checklist correspondantes.
+  // Best-effort : une erreur ici ne doit pas masquer la création du dossier.
+  let attached = 0
+  try {
+    ;({ attached } = await attachCompanyDocsToChecklist(
+      ctx.supabase,
+      ctx.org.id,
+      data as string,
+      ctx.user.id,
+    ))
+  } catch {
+    // noop — le bouton « Rattacher les pièces société » permet de rejouer
+  }
   await audit(ctx.supabase, {
     organizationId: ctx.org.id,
     action: 'tender.created',
     entityType: 'tender',
     entityId: data as string,
-    metadata: { title: d.title, reference: d.reference },
+    metadata: { title: d.title, reference: d.reference, kit_docs_attached: attached },
   })
   revalidatePath(`/${orgSlug}/tenders`)
   return { success: true, id: data as string }
@@ -134,13 +198,14 @@ export async function updateTender(
   const parsed = tenderSchema.safeParse(input)
   if (!parsed.success) return { fieldErrors: parsed.error.flatten().fieldErrors }
   const d = parsed.data
+  const buyerAccountId = await resolveBuyerAccountId(ctx, d.buyerAccountId, d.buyerName)
 
   const { error } = await ctx.supabase
     .from('tenders')
     .update({
       title: d.title,
       reference: d.reference || null,
-      buyer_account_id: d.buyerAccountId || null,
+      buyer_account_id: buyerAccountId,
       platform: d.platform || null,
       dce_url: d.dceUrl || null,
       published_at: d.publishedAt || null,
@@ -168,7 +233,7 @@ export async function updateTender(
 
   if (error) return fail(error)
   revalidatePath(`/${orgSlug}/tenders`)
-  revalidatePath(`/${orgSlug}/tenders/${id}`)
+  revalidateTenderPages(orgSlug)
   return { success: true }
 }
 
@@ -219,7 +284,7 @@ export async function setTenderStatus(
     entityId: id,
     metadata: { status },
   })
-  revalidatePath(`/${orgSlug}/tenders/${id}`)
+  revalidateTenderPages(orgSlug)
   revalidatePath(`/${orgSlug}/tenders`)
   return { success: true }
 }
@@ -234,27 +299,233 @@ export async function justifySiteVisit(orgSlug: string, id: string): Promise<Act
     .eq('id', id)
   if (error) return fail(error)
   await runChecks(ctx.supabase, id)
-  revalidatePath(`/${orgSlug}/tenders/${id}`)
+  revalidateTenderPages(orgSlug)
   return { success: true }
 }
 
 export async function deleteTender(orgSlug: string, id: string): Promise<ActionState> {
   const ctx = await requireMembership(orgSlug, 'admin')
   if (!ctx) return { error: 'Accès refusé.' }
-  const { error } = await ctx.supabase
+  if (!z.uuid().safeParse(id).success) return { error: 'Dossier invalide.' }
+  const { supabase, org } = ctx
+
+  const { data: tender } = await supabase
+    .from('tenders')
+    .select('id, title, reference')
+    .eq('organization_id', org.id)
+    .eq('id', id)
+    .single()
+  if (!tender) return fail('Dossier introuvable.')
+
+  // Les lignes tender_* sont supprimées en cascade. En revanche les
+  // documents (liens polymorphes document_links.entity_id, fichiers générés
+  // sous org_<org>/datasheets|memoire/<run>/, ids référencés par les runs)
+  // ne cascadent pas : on collecte leurs ids + chemins storage avant.
+  const [{ data: links }, { data: memRuns }, { data: dsRuns }] = await Promise.all([
+    supabase
+      .from('document_links')
+      .select('id, document_id')
+      .eq('organization_id', org.id)
+      .eq('entity_type', 'tender')
+      .eq('entity_id', id),
+    supabase
+      .from('tender_memoire_runs')
+      .select('id, content_document_id, docx_document_id, docx_full_document_id')
+      .eq('organization_id', org.id)
+      .eq('tender_id', id),
+    supabase
+      .from('tender_datasheet_runs')
+      .select('id, deliverable_document_ids')
+      .eq('organization_id', org.id)
+      .eq('tender_id', id),
+  ])
+
+  const linkedDocIds = (links ?? []).map((l) => l.document_id)
+  const refDocIds = [
+    ...(memRuns ?? []).flatMap((r) => [
+      r.content_document_id,
+      r.docx_document_id,
+      r.docx_full_document_id,
+    ]),
+    ...(dsRuns ?? []).flatMap((r) => r.deliverable_document_ids ?? []),
+  ].filter((x): x is string => typeof x === 'string')
+
+  const orFilters = [
+    ...(memRuns ?? []).map((r) => `storage_path.like.%/memoire/${r.id}/%`),
+    ...(dsRuns ?? []).map((r) => `storage_path.like.%/datasheets/${r.id}/%`),
+  ]
+  const { data: runDocs } = orFilters.length
+    ? await supabase
+        .from('documents')
+        .select('id, storage_path')
+        .eq('organization_id', org.id)
+        .or(orFilters.join(','))
+    : { data: [] }
+
+  const { data: refDocs } = refDocIds.length
+    ? await supabase
+        .from('documents')
+        .select('id, storage_path')
+        .eq('organization_id', org.id)
+        .in('id', refDocIds)
+    : { data: [] }
+
+  // Un document lié à une autre entité (projet, compte…) est seulement
+  // détaché du dossier ; les autres sont supprimés avec leur fichier.
+  const { data: allLinks } = linkedDocIds.length
+    ? await supabase
+        .from('document_links')
+        .select('document_id, entity_id')
+        .eq('organization_id', org.id)
+        .in('document_id', linkedDocIds)
+    : { data: [] }
+  const shared = new Set(
+    (allLinks ?? [])
+      .filter((l) => l.entity_id !== id)
+      .map((l) => l.document_id),
+  )
+  const removableLinked = linkedDocIds.filter((d) => !shared.has(d))
+
+  const { data: removable } = removableLinked.length
+    ? await supabase
+        .from('documents')
+        .select('id, storage_path')
+        .eq('organization_id', org.id)
+        .in('id', removableLinked)
+    : { data: [] }
+
+  const docs = new Map(
+    [...(runDocs ?? []), ...(refDocs ?? []), ...(removable ?? [])].map((d) => [
+      d.id,
+      d.storage_path,
+    ]),
+  )
+
+  const { error } = await supabase
     .from('tenders')
     .delete()
-    .eq('organization_id', ctx.org.id)
+    .eq('organization_id', org.id)
     .eq('id', id)
   if (error) return fail(error)
-  await audit(ctx.supabase, {
-    organizationId: ctx.org.id,
+
+  // Nettoyage best-effort : liens orphelins + fichiers storage + lignes documents.
+  if (links?.length) {
+    await supabase
+      .from('document_links')
+      .delete()
+      .eq('organization_id', org.id)
+      .eq('entity_type', 'tender')
+      .eq('entity_id', id)
+  }
+  const paths = [...docs.values()]
+  if (paths.length) {
+    await supabase.storage.from('documents').remove(paths)
+    await supabase
+      .from('documents')
+      .delete()
+      .eq('organization_id', org.id)
+      .in('id', [...docs.keys()])
+  }
+
+  await audit(supabase, {
+    organizationId: org.id,
     action: 'tender.deleted',
     entityType: 'tender',
     entityId: id,
+    metadata: {
+      title: tender.title,
+      reference: tender.reference,
+      documents_removed: docs.size,
+    },
   })
   revalidatePath(`/${orgSlug}/tenders`)
+  revalidatePath(`/${orgSlug}/documents`)
   return { success: true }
+}
+
+// ============================ DEMANDE DE VISITE (IA) ============================
+
+const visitEmailInput = z.object({
+  visitDate: z.string().min(4, 'Date de visite requise'),
+  visitTime: z.string().min(1, 'Heure de visite requise'),
+  lotNumber: z.string().max(30).optional().or(z.literal('')),
+  contactEmail: z.email('Email invalide').optional().or(z.literal('')),
+  contactName: z.string().max(200).optional().or(z.literal('')),
+})
+
+/**
+ * Rédige par IA (DeepSeek) un e-mail de demande de visite de site pour le
+ * dossier. Ne fait que générer un brouillon — l'envoi reste manuel (mailto).
+ */
+export async function draftSiteVisitEmail(
+  orgSlug: string,
+  tenderId: string,
+  input: unknown,
+): Promise<{ data?: { subject: string; body: string }; error?: string }> {
+  const ctx = await requireMembership(orgSlug, 'member')
+  if (!ctx) return { error: 'Accès refusé.' }
+  if (!z.uuid().safeParse(tenderId).success) return { error: 'Dossier invalide.' }
+  const parsed = visitEmailInput.safeParse(input)
+  if (!parsed.success) return { error: 'Paramètres invalides.' }
+  const d = parsed.data
+
+  const { data: tender } = await ctx.supabase
+    .from('tenders')
+    .select(
+      'title, reference, site_visit_mandatory, site_visit_at, buyer:accounts!buyer_account_id(name)',
+    )
+    .eq('organization_id', ctx.org.id)
+    .eq('id', tenderId)
+    .single()
+  if (!tender) return { error: 'Dossier introuvable.' }
+
+  // Modalités d'accès extraites de la dernière analyse DCE (si présente).
+  const { data: ana } = await ctx.supabase
+    .from('tender_dce_analyses')
+    .select('result')
+    .eq('organization_id', ctx.org.id)
+    .eq('tender_id', tenderId)
+    .eq('status', 'done')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  const visit = ana?.result
+    ? normalizeAnalysis(ana.result).deadlines.site_visit
+    : undefined
+
+  const buyerJoin = tender.buyer as { name: string } | { name: string }[] | null
+  const buyer = Array.isArray(buyerJoin) ? buyerJoin[0]?.name : buyerJoin?.name
+  const dateStr = `${d.visitDate} à ${d.visitTime}`
+  const sender = ctx.profile?.full_name ?? ctx.user.email ?? ''
+
+  try {
+    const { data } = await completeJson<{ subject: string; body: string }>({
+      system:
+        'Tu rédiges des e-mails professionnels en français au nom d\'une entreprise ' +
+        'candidate à un marché public. Ton : courtois, précis, concis. ' +
+        'Réponds uniquement en JSON {"subject": string, "body": string}. ' +
+        'Le corps est du texte brut avec sauts de ligne, signé par l\'expéditeur.',
+      prompt:
+        `Rédige une demande de rendez-vous pour la visite de site ` +
+        `${tender.site_visit_mandatory ? '(obligatoire)' : ''} du marché suivant :\n` +
+        `- Appel d'offres : ${tender.title}\n` +
+        (tender.reference ? `- Référence : ${tender.reference}\n` : '') +
+        (buyer ? `- Acheteur : ${buyer}\n` : '') +
+        (d.lotNumber ? `- Lot(s) concerné(s) : ${d.lotNumber}\n` : '') +
+        `- Date de visite souhaitée : ${dateStr}\n` +
+        (visit?.access ? `- Modalités d'accès indiquées dans le RC : ${visit.access}\n` : '') +
+        (d.contactName ? `- Destinataire : ${d.contactName}\n` : '') +
+        `- Expéditeur : ${sender} (${ctx.org.name})\n` +
+        'L\'e-mail doit confirmer la participation de l\'entreprise à la visite, ' +
+        'demander la confirmation du créneau et les modalités pratiques (lieu de RDV, ' +
+        'pièces/EPI à apporter, inscription préalable si requise).',
+      maxTokens: 1200,
+    })
+    if (!data?.subject || !data?.body) return { error: 'Réponse IA incomplète.' }
+    return { data }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : 'Échec de la génération.' }
+  }
 }
 
 // ============================ LOTS ============================
@@ -278,7 +549,7 @@ export async function addLot(
   })
   if (error) return fail(error)
   await runChecks(ctx.supabase, tenderId)
-  revalidatePath(`/${orgSlug}/tenders/${tenderId}`)
+  revalidateTenderPages(orgSlug)
   return { success: true }
 }
 
@@ -297,7 +568,7 @@ export async function toggleLotSelected(
     .eq('id', lotId)
   if (error) return fail(error)
   await runChecks(ctx.supabase, tenderId)
-  revalidatePath(`/${orgSlug}/tenders/${tenderId}`)
+  revalidateTenderPages(orgSlug)
   return { success: true }
 }
 
@@ -315,7 +586,7 @@ export async function deleteLot(
     .eq('id', lotId)
   if (error) return fail(error)
   await runChecks(ctx.supabase, tenderId)
-  revalidatePath(`/${orgSlug}/tenders/${tenderId}`)
+  revalidateTenderPages(orgSlug)
   return { success: true }
 }
 
@@ -347,8 +618,15 @@ export async function addChecklistItem(
     position: 999,
   })
   if (error) return fail(error)
+  // Rattache la pièce du kit société si le libellé correspond (Kbis,
+  // URSSAF…) — best-effort, ne bloque pas l'ajout de la ligne.
+  try {
+    await attachCompanyDocsToChecklist(ctx.supabase, ctx.org.id, tenderId, ctx.user.id)
+  } catch {
+    // noop — rejouable via « Rattacher les pièces société »
+  }
   await runChecks(ctx.supabase, tenderId)
-  revalidatePath(`/${orgSlug}/tenders/${tenderId}`)
+  revalidateTenderPages(orgSlug)
   return { success: true }
 }
 
@@ -411,7 +689,7 @@ export async function setChecklistItemStatus(
       metadata: { tender_id: tenderId, force_reason: forceReason || null },
     })
   }
-  revalidatePath(`/${orgSlug}/tenders/${tenderId}`)
+  revalidateTenderPages(orgSlug)
   return { success: true }
 }
 
@@ -444,7 +722,7 @@ export async function updateChecklistItem(
   if (error) return fail(error)
 
   await runChecks(ctx.supabase, tenderId)
-  revalidatePath(`/${orgSlug}/tenders/${tenderId}`)
+  revalidateTenderPages(orgSlug)
   return { success: true }
 }
 
@@ -462,7 +740,7 @@ export async function assignChecklistItem(
     .eq('organization_id', ctx.org.id)
     .eq('id', itemId)
   if (error) return fail(error)
-  revalidatePath(`/${orgSlug}/tenders/${tenderId}`)
+  revalidateTenderPages(orgSlug)
   return { success: true }
 }
 
@@ -497,8 +775,42 @@ export async function attachItemDocument(
     )
   }
   await runChecks(ctx.supabase, tenderId)
-  revalidatePath(`/${orgSlug}/tenders/${tenderId}`)
+  revalidateTenderPages(orgSlug)
   return { success: true }
+}
+
+/**
+ * Rattache automatiquement les pièces du kit candidature société (Kbis,
+ * URSSAF, attestations, DC1/DC2…) aux lignes de checklist sans document.
+ * La pièce est validée si elle est en règle ; sinon « à vérifier »
+ * (expirée, ou signature requise non présente).
+ */
+export async function autoAttachCompanyDocs(
+  orgSlug: string,
+  tenderId: string,
+): Promise<{ error?: string; success?: boolean; attached?: number; validated?: number }> {
+  const ctx = await requireMembership(orgSlug, 'member')
+  if (!ctx) return { error: 'Accès refusé.' }
+  if (!z.uuid().safeParse(tenderId).success) return { error: 'Dossier invalide.' }
+  const { attached, validated } = await attachCompanyDocsToChecklist(
+    ctx.supabase,
+    ctx.org.id,
+    tenderId,
+    ctx.user.id,
+  )
+
+  await runChecks(ctx.supabase, tenderId)
+  if (attached > 0) {
+    await audit(ctx.supabase, {
+      organizationId: ctx.org.id,
+      action: 'checklist.company_docs_attached',
+      entityType: 'tender',
+      entityId: tenderId,
+      metadata: { attached, validated },
+    })
+  }
+  revalidateTenderPages(orgSlug)
+  return { success: true, attached, validated }
 }
 
 const ALLOWED_MIME = new Set([
@@ -584,7 +896,7 @@ export async function uploadAndAttachToChecklistItem(
     entityId: doc.id,
     metadata: { name: file.name, checklist_item: itemId },
   })
-  revalidatePath(`/${orgSlug}/tenders/${tenderId}`)
+  revalidateTenderPages(orgSlug)
   return { success: true, documentId: doc.id }
 }
 
@@ -602,7 +914,7 @@ export async function deleteChecklistItem(
     .eq('id', itemId)
   if (error) return fail(error)
   await runChecks(ctx.supabase, tenderId)
-  revalidatePath(`/${orgSlug}/tenders/${tenderId}`)
+  revalidateTenderPages(orgSlug)
   return { success: true }
 }
 
@@ -620,7 +932,7 @@ export async function runComplianceChecks(
   if (!ctx) return { error: 'Accès refusé.' }
   const { error } = await ctx.supabase.rpc('run_compliance_checks', { p_tender_id: tenderId })
   if (error) return fail(error)
-  revalidatePath(`/${orgSlug}/tenders/${tenderId}`)
+  revalidateTenderPages(orgSlug)
   return { success: true }
 }
 
@@ -635,9 +947,10 @@ export async function resolveAlert(
     .from('tender_alerts')
     .update({ resolved_at: new Date().toISOString(), resolved_by: ctx.user.id })
     .eq('organization_id', ctx.org.id)
+    .eq('tender_id', tenderId)
     .eq('id', alertId)
   if (error) return fail(error)
-  revalidatePath(`/${orgSlug}/tenders/${tenderId}`)
+  revalidateTenderPages(orgSlug)
   return { success: true }
 }
 
@@ -685,6 +998,21 @@ export async function submitTender(
   })
   if (error) return fail(error)
 
+  // « Dossier téléversé sur la plateforme » devient un fait dès le dépôt
+  // enregistré (catégorie depot — hors barrière readiness). Le récépissé
+  // reste à archiver manuellement dans la checklist.
+  await syncChecklistItems(
+    ctx.supabase,
+    ctx.org.id,
+    tenderId,
+    [/t[ée]l[ée]vers/i],
+    {
+      status: 'valide',
+      validated_by: ctx.user.id,
+      validated_at: new Date().toISOString(),
+    },
+  )
+
   await ctx.supabase
     .from('tenders')
     .update({ status: 'depose' })
@@ -698,7 +1026,7 @@ export async function submitTender(
     entityId: tenderId,
     metadata: { platform: d.platform, ref: d.submissionRef },
   })
-  revalidatePath(`/${orgSlug}/tenders/${tenderId}`)
+  revalidateTenderPages(orgSlug)
   revalidatePath(`/${orgSlug}/tenders`)
   return { success: true }
 }
@@ -744,7 +1072,7 @@ export async function recordTenderResult(
     entityId: tenderId,
     metadata: { outcome: d.outcome },
   })
-  revalidatePath(`/${orgSlug}/tenders/${tenderId}`)
+  revalidateTenderPages(orgSlug)
   revalidatePath(`/${orgSlug}/tenders`)
   return { success: true }
 }

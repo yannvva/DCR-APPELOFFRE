@@ -11,7 +11,6 @@ import {
 } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { acceptInvitation } from '@/app/actions/organization'
-import { createClient } from '@/lib/supabase/client'
 
 export function AcceptInvite({ token }: { token: string }) {
   const router = useRouter()
@@ -27,14 +26,8 @@ export function AcceptInvite({ token }: { token: string }) {
       setPending(false)
       return
     }
-    if ('organizationId' in res) {
-      const supabase = createClient()
-      const { data: org } = await supabase
-        .from('organizations')
-        .select('slug')
-        .eq('id', res.organizationId)
-        .single()
-      router.push(org ? `/${org.slug}/dashboard` : '/')
+    if ('slug' in res) {
+      router.push(res.slug ? `/${res.slug}/dashboard` : '/')
     }
   }
 

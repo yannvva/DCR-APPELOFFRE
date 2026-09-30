@@ -91,6 +91,7 @@ export default async function ContactDetailPage({
               entityId={id}
               documents={documents}
               canEdit={canEdit}
+              folder={`CRM — ${fullName || 'Contact'}`.slice(0, 90)}
             />
           </section>
         </div>

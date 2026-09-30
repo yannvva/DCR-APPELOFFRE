@@ -4,10 +4,20 @@ import { useState, useTransition } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { toast } from 'sonner'
-import { Check, FileText, MessageSquare, Plus, RefreshCw, Trash2 } from 'lucide-react'
+import { Building2, Check, FileText, MessageSquare, Plus, RefreshCw, Trash2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import {
   Dialog,
   DialogContent,
@@ -28,6 +38,7 @@ import {
   addChecklistItem,
   assignChecklistItem,
   attachItemDocument,
+  autoAttachCompanyDocs,
   deleteChecklistItem,
   runComplianceChecks,
   setChecklistItemStatus,
@@ -90,6 +101,7 @@ export function ChecklistPanel({
   const [pending, startTransition] = useTransition()
   const [addOpen, setAddOpen] = useState(false)
   const [detailId, setDetailId] = useState<string | null>(null)
+  const [deleteItem, setDeleteItem] = useState<TenderChecklistItem | null>(null)
   const [category, setCategory] = useState<ChecklistCategory>('administratif')
   const [requirement, setRequirement] = useState<ChecklistRequirement>('obligatoire')
   const [assigneeId, setAssigneeId] = useState('')
@@ -152,6 +164,28 @@ export function ChecklistPanel({
           {items.filter((i) => i.status === 'valide').length}/{items.length} lignes validées
         </p>
         <div className="flex gap-2">
+          {canEdit && (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={pending}
+              title="Rattache les pièces du référentiel société (Kbis, URSSAF, attestations, DC1/DC2…) aux lignes correspondantes"
+              onClick={() =>
+                startTransition(async () => {
+                  const res = await autoAttachCompanyDocs(orgSlug, tenderId)
+                  if (res.error) toast.error(res.error)
+                  else if (!res.attached)
+                    toast.info('Aucune ligne à rattacher — les pièces société disponibles sont déjà liées ou aucun libellé ne correspond.')
+                  else
+                    toast.success(
+                      `${res.attached} pièce${res.attached > 1 ? 's' : ''} société rattachée${res.attached > 1 ? 's' : ''} (${res.validated} validée${res.validated !== 1 ? 's' : ''})`,
+                    )
+                })
+              }
+            >
+              <Building2 className="size-3.5" /> Rattacher les pièces société
+            </Button>
+          )}
           <Button
             variant="outline"
             size="sm"
@@ -272,6 +306,11 @@ export function ChecklistPanel({
               const expired =
                 item.document?.valid_until != null &&
                 new Date(item.document.valid_until) < new Date()
+              const deadlineOverdue =
+                item.internal_deadline != null &&
+                new Date(item.internal_deadline) < new Date() &&
+                item.status !== 'valide' &&
+                item.status !== 'non_requis'
               return (
                 <li key={item.id} className="flex flex-wrap items-center gap-3 px-3 py-2.5">
                   <span
@@ -308,8 +347,16 @@ export function ChecklistPanel({
                         </Badge>
                       )}
                       {item.internal_deadline && (
-                        <Badge variant="secondary" className="text-[10px]">
+                        <Badge
+                          variant="secondary"
+                          className={cn(
+                            'text-[10px]',
+                            deadlineOverdue &&
+                              'bg-red-500/15 text-red-600 dark:text-red-300',
+                          )}
+                        >
                           éch. {formatDate(item.internal_deadline)}
+                          {deadlineOverdue && ' — dépassée'}
                         </Badge>
                       )}
                       {item.comment && (
@@ -347,6 +394,7 @@ export function ChecklistPanel({
                           <SelectValue placeholder="Attacher une pièce…" />
                         </SelectTrigger>
                         <SelectContent>
+                          <SelectItem value="">— Aucune pièce —</SelectItem>
                           {documents.map((d) => (
                             <SelectItem key={d.id} value={d.id}>
                               {d.name}
@@ -365,6 +413,7 @@ export function ChecklistPanel({
                           <SelectValue placeholder="Responsable" />
                         </SelectTrigger>
                         <SelectContent>
+                          <SelectItem value="">—</SelectItem>
                           {members.map((m) => (
                             <SelectItem key={m.user_id} value={m.user_id}>
                               {m.full_name ?? 'Membre'}
@@ -426,7 +475,7 @@ export function ChecklistPanel({
                         size="icon-sm"
                         disabled={pending}
                         aria-label={`Supprimer ${item.label}`}
-                        onClick={() => act(() => deleteChecklistItem(orgSlug, item.id, tenderId))}
+                        onClick={() => setDeleteItem(item)}
                       >
                         <Trash2 className="size-4" />
                       </Button>
@@ -444,6 +493,39 @@ export function ChecklistPanel({
           Aucune ligne de checklist.
         </p>
       )}
+
+      {/* Suppression d'une ligne : confirmation — la corbeille est à portée
+          de clic des selects et la perte est irréversible. */}
+      <AlertDialog open={deleteItem != null} onOpenChange={(o) => !o && setDeleteItem(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Supprimer « {deleteItem?.label} » ?</AlertDialogTitle>
+            <AlertDialogDescription>
+              La ligne et son suivi seront retirés de la checklist du dossier.
+              {deleteItem?.document && ' Le document joint restera dans la bibliothèque.'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Annuler</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              disabled={pending}
+              onClick={() =>
+                startTransition(async () => {
+                  const res = await deleteChecklistItem(orgSlug, deleteItem!.id, tenderId)
+                  if (res?.error) toast.error(res.error)
+                  else {
+                    toast.success('Ligne supprimée')
+                    setDeleteItem(null)
+                  }
+                })
+              }
+            >
+              Supprimer
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {detailId &&
         (() => {

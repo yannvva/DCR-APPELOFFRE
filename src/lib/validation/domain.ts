@@ -72,35 +72,57 @@ export const linkDocumentSchema = z.object({
 
 const optionalDate = z.string().optional().or(z.literal(''))
 
+// z.literal('') doit passer en premier : z.coerce.number() transformerait
+// une chaîne vide en 0 (Number('') === 0), écrasant les champs laissés vides.
 export const tenderLotSchema = z.object({
   number: z.coerce.number().int().min(1),
   title: z.string().min(1).max(300),
-  amountEuros: z.coerce.number().min(0).optional(),
+  amountEuros: z.literal('').or(z.coerce.number().min(0)).optional(),
 })
 
-export const tenderSchema = z.object({
-  title: z.string().min(1, 'Intitulé requis').max(300),
-  reference: z.string().max(120).optional().or(z.literal('')),
-  buyerAccountId: z.uuid().optional().or(z.literal('')),
-  platform: z.string().max(120).optional().or(z.literal('')),
-  dceUrl: z.url('URL invalide').optional().or(z.literal('')),
-  publishedAt: optionalDate,
-  responseDeadline: z.string().min(1, 'Date limite de réponse requise'),
-  questionsDeadline: optionalDate,
-  siteVisitAt: optionalDate,
-  siteVisitMandatory: z.boolean().default(false),
-  procedureType: z.string().max(120).optional().or(z.literal('')),
-  marketType: z.enum(['travaux', 'fournitures', 'services', 'mixte']).optional().or(z.literal('')),
-  durationMonths: z.coerce.number().int().min(1).optional().or(z.literal('')),
-  estimatedAmountEuros: z.coerce.number().min(0).optional().or(z.literal('')),
-  region: z.string().max(120).optional().or(z.literal('')),
-  priceWeight: z.coerce.number().min(0).max(100).optional().or(z.literal('')),
-  technicalWeight: z.coerce.number().min(0).max(100).optional().or(z.literal('')),
-  depositMode: z.enum(['electronique', 'papier', 'hybride']).optional().or(z.literal('')),
-  responsibleId: z.uuid().optional().or(z.literal('')),
-  notes: z.string().max(10000).optional().or(z.literal('')),
-  lots: z.array(tenderLotSchema).default([]),
-})
+export const tenderSchema = z
+  .object({
+    title: z.string().min(1, 'Intitulé requis').max(300),
+    reference: z.string().max(120).optional().or(z.literal('')),
+    buyerAccountId: z.uuid().optional().or(z.literal('')),
+    // Nom d'acheteur extrait d'un avis importé — résolu en compte à la volée
+    buyerName: z.string().max(200).optional().or(z.literal('')),
+    platform: z.string().max(120).optional().or(z.literal('')),
+    // Tolérant : « francemarches.com/avis/… » sans schéma est complété en https://
+    dceUrl: z.preprocess(
+      (v) =>
+        typeof v === 'string' && v.trim() && !/^[a-z][a-z0-9+.-]*:/i.test(v.trim())
+          ? `https://${v.trim()}`
+          : v,
+      z.url('URL invalide').optional().or(z.literal('')),
+    ),
+    publishedAt: optionalDate,
+    responseDeadline: z.string().min(1, 'Date limite de réponse requise'),
+    questionsDeadline: optionalDate,
+    siteVisitAt: optionalDate,
+    siteVisitMandatory: z.boolean().default(false),
+    procedureType: z.string().max(120).optional().or(z.literal('')),
+    marketType: z.enum(['travaux', 'fournitures', 'services', 'mixte']).optional().or(z.literal('')),
+    durationMonths: z.literal('').or(z.coerce.number().int().min(1)).optional(),
+    estimatedAmountEuros: z.literal('').or(z.coerce.number().min(0)).optional(),
+    region: z.string().max(120).optional().or(z.literal('')),
+    priceWeight: z.literal('').or(z.coerce.number().min(0).max(100)).optional(),
+    technicalWeight: z.literal('').or(z.coerce.number().min(0).max(100)).optional(),
+    depositMode: z.enum(['electronique', 'papier', 'hybride']).optional().or(z.literal('')),
+    responsibleId: z.uuid().optional().or(z.literal('')),
+    notes: z.string().max(10000).optional().or(z.literal('')),
+    lots: z.array(tenderLotSchema).default([]),
+  })
+  .refine(
+    (d) =>
+      typeof d.priceWeight !== 'number' ||
+      typeof d.technicalWeight !== 'number' ||
+      d.priceWeight + d.technicalWeight <= 100,
+    {
+      message: 'La somme des critères ne peut pas dépasser 100 %',
+      path: ['technicalWeight'],
+    },
+  )
 
 export const checklistItemSchema = z.object({
   label: z.string().min(1, 'Libellé requis').max(300),

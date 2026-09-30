@@ -3,6 +3,17 @@
 import { useState, useTransition } from 'react'
 import { toast } from 'sonner'
 import { Plus, Trash2 } from 'lucide-react'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
@@ -82,20 +93,47 @@ export function LotsPanel({
                 {formatEuros(lot.amount_cents)}
               </span>
               {canEdit && (
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  disabled={pending}
-                  aria-label={`Supprimer le lot ${lot.number}`}
-                  onClick={() =>
-                    startTransition(async () => {
-                      const res = await deleteLot(orgSlug, lot.id, tenderId)
-                      if (res?.error) toast.error(res.error)
-                    })
-                  }
-                >
-                  <Trash2 className="size-4" />
-                </Button>
+                <AlertDialog>
+                  <AlertDialogTrigger
+                    render={
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        disabled={pending}
+                        aria-label={`Supprimer le lot ${lot.number}`}
+                      >
+                        <Trash2 className="size-4" />
+                      </Button>
+                    }
+                  />
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>
+                        Supprimer le lot {lot.number} ?
+                      </AlertDialogTitle>
+                      <AlertDialogDescription>
+                        « {lot.title} » sera retiré du dossier. Les pièces de
+                        checklist et les documents générés qui y sont rattachés
+                        perdront leur association au lot.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Annuler</AlertDialogCancel>
+                      <AlertDialogAction
+                        disabled={pending}
+                        onClick={() =>
+                          startTransition(async () => {
+                            const res = await deleteLot(orgSlug, lot.id, tenderId)
+                            if (res?.error) toast.error(res.error)
+                            else toast.success(`Lot ${lot.number} supprimé`)
+                          })
+                        }
+                      >
+                        Supprimer
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
               )}
             </li>
           ))}

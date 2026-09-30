@@ -34,6 +34,13 @@ export function OpportunitiesKanban({
 }) {
   const router = useRouter()
   const [items, setItems] = useState(opportunities)
+  // Resynchronise quand le serveur renvoie de nouvelles opportunités —
+  // sinon une opportunité créée via le dialogue n'apparaît pas au kanban.
+  const [prevOpps, setPrevOpps] = useState(opportunities)
+  if (opportunities !== prevOpps) {
+    setPrevOpps(opportunities)
+    setItems(opportunities)
+  }
   const [active, setActive] = useState<Opportunity | null>(null)
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }))
 

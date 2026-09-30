@@ -55,6 +55,14 @@ export function TaskBoard({
   const [items, setItems] = useState(tasks)
   const [selected, setSelected] = useState<Task | null>(null)
   const [active, setActive] = useState<Task | null>(null)
+  // Resynchronise quand le serveur renvoie de nouvelles tâches (création ou
+  // édition via dialogue) — sinon l'état local masque les données fraîches.
+  const [prevTasks, setPrevTasks] = useState(tasks)
+  if (tasks !== prevTasks) {
+    setPrevTasks(tasks)
+    setItems(tasks)
+    setSelected((s) => (s ? (tasks.find((t) => t.id === s.id) ?? s) : s))
+  }
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }))
 
   const parents = useMemo(() => items.filter((t) => !t.parent_task_id), [items])

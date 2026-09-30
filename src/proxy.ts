@@ -38,14 +38,21 @@ export async function proxy(request: NextRequest) {
   if (!user && !isPublic) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
-    url.searchParams.set('next', path)
+    // Cible complète (path + query) pour revenir sur la bonne page/onglet.
+    url.searchParams.set('next', path + request.nextUrl.search)
     return NextResponse.redirect(url)
   }
 
   if (user && (path === '/login' || path === '/signup')) {
     const url = request.nextUrl.clone()
-    url.pathname = '/'
-    url.search = ''
+    const next = request.nextUrl.searchParams.get('next')
+    if (next?.startsWith('/') && !next.startsWith('//')) {
+      url.pathname = next
+      url.search = ''
+    } else {
+      url.pathname = '/'
+      url.search = ''
+    }
     return NextResponse.redirect(url)
   }
 

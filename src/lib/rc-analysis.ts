@@ -1,4 +1,5 @@
 import 'server-only'
+import { docxText } from '@/lib/dce/extract'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 export interface RcAnalysis {
@@ -44,8 +45,15 @@ export async function analyzeRcDocument(
     text = pdf.text
   } else if (doc.mime_type?.startsWith('text/')) {
     text = await fileData.text()
+  } else if (
+    doc.mime_type ===
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+    /\.docx$/i.test(doc.name)
+  ) {
+    // Le RC arrive souvent en .docx — même extraction que le pipeline DCE.
+    text = docxText(new Uint8Array(await fileData.arrayBuffer()))
   } else {
-    throw new Error('Format non analysable (PDF requis).')
+    throw new Error('Format non analysable (PDF ou DOCX requis).')
   }
 
   if (!text || text.trim().length < 20) {

@@ -4,6 +4,14 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { loginSchema, signupSchema, type ActionState } from '@/lib/validation/auth'
 
+// Cible interne uniquement — `//hote.tld` est une URL protocol-relative
+// valide qui redirigerait vers un site externe.
+function safeNext(next: FormDataEntryValue | null, fallback: string) {
+  return typeof next === 'string' && next.startsWith('/') && !next.startsWith('//')
+    ? next
+    : fallback
+}
+
 export async function signup(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const parsed = signupSchema.safeParse({
     fullName: formData.get('fullName'),
@@ -25,7 +33,8 @@ export async function signup(_prev: ActionState, formData: FormData): Promise<Ac
     return { error: 'Impossible de créer le compte. Vérifiez vos informations ou réessayez.' }
   }
 
-  redirect('/onboarding')
+  const next = formData.get('next')
+  redirect(safeNext(next, '/onboarding'))
 }
 
 export async function login(_prev: ActionState, formData: FormData): Promise<ActionState> {
@@ -45,7 +54,7 @@ export async function login(_prev: ActionState, formData: FormData): Promise<Act
   }
 
   const next = formData.get('next')
-  redirect(typeof next === 'string' && next.startsWith('/') ? next : '/')
+  redirect(safeNext(next, '/'))
 }
 
 export async function logout() {

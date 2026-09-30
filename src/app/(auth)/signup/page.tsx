@@ -24,7 +24,10 @@ export default async function SignupPage({
         <AuthForm mode="signup" action={signup} next={typeof next === 'string' ? next : undefined} />
         <p className="mt-4 text-center text-sm text-muted-foreground">
           Déjà un compte ?{' '}
-          <Link href="/login" className="text-primary underline-offset-4 hover:underline">
+          <Link
+            href={typeof next === 'string' ? `/login?next=${encodeURIComponent(next)}` : '/login'}
+            className="text-primary underline-offset-4 hover:underline"
+          >
             Se connecter
           </Link>
         </p>

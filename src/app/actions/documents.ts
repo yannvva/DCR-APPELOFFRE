@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { requireMembership } from '@/lib/dal/auth'
 import { audit } from '@/lib/audit'
 import { linkDocumentSchema } from '@/lib/validation/domain'
+import { normalizeFolderPath } from '@/lib/folder-tree'
 import type { ActionState } from '@/lib/validation/auth'
 
 const MAX_SIZE = 25 * 1024 * 1024
@@ -101,24 +102,36 @@ export async function uploadDocument(orgSlug: string, formData: FormData): Promi
     metadata: { name, size: file.size },
   })
   revalidatePath(`/${orgSlug}/documents`)
+  revalidatePath(`/${orgSlug}/societe`)
   return { success: true }
 }
 
-export async function getDocumentUrl(orgSlug: string, documentId: string) {
+export async function getDocumentUrl(
+  orgSlug: string,
+  documentId: string,
+  opts?: { download?: boolean },
+) {
   const ctx = await requireMembership(orgSlug)
   if (!ctx) return { error: 'Accès refusé.' as const }
 
   const { data: doc } = await ctx.supabase
     .from('documents')
-    .select('storage_path')
+    .select('storage_path, name')
     .eq('organization_id', ctx.org.id)
     .eq('id', documentId)
     .single()
   if (!doc) return { error: 'Document introuvable.' as const }
 
+  // `download` impose Content-Disposition: attachment avec le NOM du document
+  // — sans lui le fichier téléchargé portait la clé de stockage
+  // (« <uuid>-<nom> »). Ne pas l'activer pour les aperçus iframe.
   const { data, error } = await ctx.supabase.storage
     .from('documents')
-    .createSignedUrl(doc.storage_path, 60)
+    .createSignedUrl(
+      doc.storage_path,
+      60,
+      opts?.download ? { download: doc.name } : undefined,
+    )
   if (error || !data) return { error: 'Impossible de générer le lien.' as const }
   return { url: data.signedUrl }
 }
@@ -157,6 +170,47 @@ export async function deleteDocument(orgSlug: string, documentId: string): Promi
     metadata: { name: doc.name },
   })
   revalidatePath(`/${orgSlug}/documents`)
+  revalidatePath(`/${orgSlug}/societe`)
+  return { success: true }
+}
+
+const VALIDITY_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+
+export async function setDocumentValidity(
+  orgSlug: string,
+  documentId: string,
+  validUntil: string | null,
+): Promise<ActionState> {
+  const ctx = await requireMembership(orgSlug, 'member')
+  if (!ctx) return { error: 'Accès refusé.' }
+  if (validUntil !== null && !VALIDITY_DATE_RE.test(validUntil)) {
+    return fail('Date invalide.')
+  }
+
+  const { data: doc } = await ctx.supabase
+    .from('documents')
+    .select('id, name')
+    .eq('organization_id', ctx.org.id)
+    .eq('id', documentId)
+    .single()
+  if (!doc) return fail('Document introuvable.')
+
+  const { error } = await ctx.supabase
+    .from('documents')
+    .update({ valid_until: validUntil })
+    .eq('organization_id', ctx.org.id)
+    .eq('id', documentId)
+  if (error) return fail()
+
+  await audit(ctx.supabase, {
+    organizationId: ctx.org.id,
+    action: 'document.validity_updated',
+    entityType: 'document',
+    entityId: documentId,
+    metadata: { name: doc.name, validUntil },
+  })
+  revalidatePath(`/${orgSlug}/documents`)
+  revalidatePath(`/${orgSlug}/societe`)
   return { success: true }
 }
 
@@ -219,6 +273,5 @@ export async function unlinkDocumentByEntity(
 }
 
 function sanitizeFolder(path: string) {
-  const clean = ('/' + path).replace(/\/+/g, '/').replace(/\.\./g, '').replace(/\/$/, '')
-  return clean || '/'
+  return normalizeFolderPath(path)
 }

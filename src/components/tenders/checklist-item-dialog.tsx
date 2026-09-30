@@ -307,6 +307,7 @@ export function ChecklistItemDialog({
                       <SelectValue placeholder="Choisir un document…" />
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="">— Aucune pièce —</SelectItem>
                       {documents.map((d) => (
                         <SelectItem key={d.id} value={d.id}>
                           {d.name}

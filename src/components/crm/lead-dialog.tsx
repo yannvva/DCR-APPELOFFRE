@@ -32,21 +32,35 @@ type Values = z.infer<typeof leadSchema>
 export function LeadDialog({
   orgSlug,
   accounts,
+  defaultOpen,
 }: {
   orgSlug: string
   accounts: { id: string; name: string }[]
+  /** Lien profond « ?new=1 » — la page remonte le dialogue via `key`. */
+  defaultOpen?: boolean
 }) {
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(defaultOpen ?? false)
   const [accountId, setAccountId] = useState('')
   const {
     register,
     handleSubmit,
     setError,
+    reset,
     formState: { errors, isSubmitting },
   } = useForm<Values>({
     resolver: zodResolver(leadSchema),
     defaultValues: { title: '', source: '', notes: '', accountId: '', contactId: '' },
   })
+
+  // Formulaire vierge à chaque ouverture — les valeurs survivent sinon à la
+  // fermeture de la modale.
+  function handleOpenChange(o: boolean) {
+    if (o) {
+      reset({ title: '', source: '', notes: '', accountId: '', contactId: '' })
+      setAccountId('')
+    }
+    setOpen(o)
+  }
 
   async function onSubmit(values: Values) {
     const res = await createLead(orgSlug, { ...values, accountId })
@@ -65,7 +79,7 @@ export function LeadDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger
         render={
           <Button>

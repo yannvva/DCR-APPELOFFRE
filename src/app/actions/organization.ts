@@ -223,5 +223,10 @@ export async function acceptInvitation(token: string) {
   if (error) {
     return { error: error.message }
   }
-  return { organizationId: data as string }
+  const { data: org } = await supabase
+    .from('organizations')
+    .select('slug')
+    .eq('id', data as string)
+    .single()
+  return { slug: org?.slug ?? null }
 }

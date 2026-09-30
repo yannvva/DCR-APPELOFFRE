@@ -42,6 +42,32 @@ export async function listProjectTasks(ctx: Ctx, projectId: string) {
   return (data ?? []) as Task[]
 }
 
+export interface TodoTask extends Task {
+  project?: { id: string; name: string } | null
+}
+
+/**
+ * Tâches de projet non terminées — alimentent la page « À faire »
+ * (échéancier transverse, en plus des pièces de dossier). Triées par
+ * échéance ; les tâches sans échéance ferment la marche.
+ */
+export async function listOpenProjectTasks(ctx: Ctx): Promise<TodoTask[]> {
+  const { data, error } = await ctx.supabase
+    .from('tasks')
+    .select(
+      '*, project:projects!project_id(id, name), assignees:task_assignees(user_id, profile:profiles(full_name, avatar_url))',
+    )
+    .eq('organization_id', ctx.org.id)
+    .neq('status', 'done')
+    .order('due_date', { ascending: true, nullsFirst: false })
+    .limit(500)
+  if (error) throw error
+  return ((data ?? []) as unknown as TodoTask[]).map((t) => ({
+    ...t,
+    project: Array.isArray(t.project) ? t.project[0] : t.project,
+  }))
+}
+
 export async function getTask(ctx: Ctx, id: string) {
   const { data } = await ctx.supabase
     .from('tasks')
@@ -63,11 +89,15 @@ export async function listTaskComments(ctx: Ctx, taskId: string) {
 }
 
 export async function listOrgMembers(ctx: Ctx) {
-  const { data } = await ctx.supabase
+  // FK explicite : organization_members pointe deux fois vers profiles
+  // (user_id et invited_by) — sans indice PostgREST renvoie une erreur
+  // d'ambiguïté et la liste ressortait vide en silence.
+  const { data, error } = await ctx.supabase
     .from('organization_members')
-    .select('user_id, role, profiles(full_name, avatar_url)')
+    .select('user_id, role, profiles!organization_members_user_id_fkey(full_name, avatar_url)')
     .eq('organization_id', ctx.org.id)
     .order('joined_at')
+  if (error) throw error
   return (data ?? []).map(
     (m: {
       user_id: string

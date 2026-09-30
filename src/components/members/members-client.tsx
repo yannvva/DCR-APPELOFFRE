@@ -150,6 +150,14 @@ function MemberRow({
 }) {
   const name = member.profile?.full_name || member.user_id.slice(0, 8)
   const canEditRole = canManage && !isSelf && member.role !== 'owner'
+  // Contrôlé + resync : si la mise à jour échoue côté serveur, le Select
+  // revient au rôle réel au lieu d'afficher un rôle non appliqué.
+  const [role, setRole] = useState(member.role)
+  const [prevRole, setPrevRole] = useState(member.role)
+  if (member.role !== prevRole) {
+    setPrevRole(member.role)
+    setRole(member.role)
+  }
 
   return (
     <TableRow>
@@ -169,15 +177,18 @@ function MemberRow({
       <TableCell>
         {canEditRole ? (
           <Select
-            defaultValue={member.role}
-            onValueChange={async (role) => {
-              if (!role) return
+            value={role}
+            onValueChange={async (next) => {
+              if (!next || next === role) return
+              setRole(next as MembershipRole)
               const fd = new FormData()
               fd.set('userId', member.user_id)
-              fd.set('role', role)
+              fd.set('role', next)
               const res = await updateMemberRole(orgSlug, undefined, fd)
-              if (res?.error) toast.error(res.error)
-              else toast.success('Rôle mis à jour')
+              if (res?.error) {
+                setRole(member.role)
+                toast.error(res.error)
+              } else toast.success('Rôle mis à jour')
             }}
           >
             <SelectTrigger className="w-36">

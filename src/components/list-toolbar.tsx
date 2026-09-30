@@ -10,23 +10,34 @@ export function SearchInput({ placeholder = 'Rechercher…' }: { placeholder?: s
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
-  const [value, setValue] = useState(searchParams.get('q') ?? '')
+  const paramQ = searchParams.get('q') ?? ''
+  const [value, setValue] = useState(paramQ)
   const timer = useRef<ReturnType<typeof setTimeout>>(null)
 
+  // L'URL peut changer sans saisie (retour navigateur, lien partagé) —
+  // ajustement d'état pendant le rendu (pattern React documenté).
+  const [lastParamQ, setLastParamQ] = useState(paramQ)
+  if (paramQ !== lastParamQ) {
+    setLastParamQ(paramQ)
+    setValue(paramQ)
+  }
+
   useEffect(() => {
+    if (value === paramQ) return // rien à pousser dans l'URL (montage inclus)
     if (timer.current) clearTimeout(timer.current)
     timer.current = setTimeout(() => {
-      const sp = new URLSearchParams(searchParams.toString())
+      // Lu au moment du tir : le snapshot de searchParams du render pourrait
+      // écraser un autre filtre modifié entre-temps.
+      const sp = new URLSearchParams(window.location.search)
       if (value) sp.set('q', value)
       else sp.delete('q')
       sp.delete('page')
-      router.replace(`${pathname}?${sp.toString()}`)
+      router.replace(`${pathname}?${sp.toString()}`, { scroll: false })
     }, 250)
     return () => {
       if (timer.current) clearTimeout(timer.current)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value])
+  }, [value, paramQ, pathname, router])
 
   return (
     <div className="relative w-64">

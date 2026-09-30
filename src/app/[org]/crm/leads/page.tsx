@@ -47,7 +47,14 @@ export default async function LeadsPage({
           <h1 className="text-2xl font-semibold">Leads</h1>
           <p className="text-sm text-muted-foreground">Prospects entrants à qualifier</p>
         </div>
-        {canEdit && <LeadDialog orgSlug={orgSlug} accounts={accounts} />}
+        {canEdit && (
+          <LeadDialog
+            key={sp.new === '1' ? 'new' : 'idle'}
+            orgSlug={orgSlug}
+            accounts={accounts}
+            defaultOpen={sp.new === '1'}
+          />
+        )}
       </div>
 
       <SearchInput placeholder="Rechercher un lead…" />

@@ -7,6 +7,16 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -50,7 +60,16 @@ export function TaskDetail({
     comments: TaskComment[]
   }>({ taskId: null, comments: [] })
   const [body, setBody] = useState('')
+  const [confirmDelete, setConfirmDelete] = useState(false)
   const [pending, startTransition] = useTransition()
+
+  // Changement de tâche sans fermer la modale : le brouillon de commentaire
+  // ne doit pas fuiter d'une tâche à l'autre.
+  const [prevTaskId, setPrevTaskId] = useState(task?.id)
+  if (task?.id !== prevTaskId) {
+    setPrevTaskId(task?.id)
+    setBody('')
+  }
 
   useEffect(() => {
     if (!task) return
@@ -198,19 +217,41 @@ export function TaskDetail({
               size="sm"
               className="text-destructive"
               disabled={pending}
-              onClick={() =>
-                startTransition(async () => {
-                  const res = await deleteTask(orgSlug, task.id)
-                  if (res?.error) toast.error(res.error)
-                  else {
-                    toast.success('Tâche supprimée')
-                    onClose()
-                  }
-                })
-              }
+              onClick={() => setConfirmDelete(true)}
             >
               <Trash2 className="size-4" /> Supprimer
             </Button>
+            <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Supprimer « {task.title} » ?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    La tâche, ses sous-tâches et ses commentaires seront
+                    définitivement supprimés.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Annuler</AlertDialogCancel>
+                  <AlertDialogAction
+                    variant="destructive"
+                    disabled={pending}
+                    onClick={() =>
+                      startTransition(async () => {
+                        const res = await deleteTask(orgSlug, task.id)
+                        if (res?.error) toast.error(res.error)
+                        else {
+                          toast.success('Tâche supprimée')
+                          setConfirmDelete(false)
+                          onClose()
+                        }
+                      })
+                    }
+                  >
+                    Supprimer
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
             <TaskDialog
               orgSlug={orgSlug}
               projectId={task.project_id}

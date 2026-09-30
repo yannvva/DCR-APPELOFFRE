@@ -106,6 +106,7 @@ export default async function ProjectDetailPage({
           entityId={id}
           documents={documents}
           canEdit={canEdit}
+          folder={`Projet ${project.code} — ${project.name}`.slice(0, 90)}
         />
       </section>
     </div>

@@ -45,7 +45,12 @@ export default async function ProjectsPage({
           <p className="text-sm text-muted-foreground">Exécution opérationnelle</p>
         </div>
         {canEdit && (
-          <ProjectDialog orgSlug={orgSlug} accounts={accounts} defaultOpen={sp.new === '1'} />
+          <ProjectDialog
+            key={sp.new === '1' ? 'new' : 'default'}
+            orgSlug={orgSlug}
+            accounts={accounts}
+            defaultOpen={sp.new === '1'}
+          />
         )}
       </div>
 

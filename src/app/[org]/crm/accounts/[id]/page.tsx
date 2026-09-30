@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation'
 import { ArrowLeft, Globe, Pencil, Phone } from 'lucide-react'
 import { requireMembership } from '@/lib/dal/auth'
 import { getAccount, getEntityTags, listContacts, listOpportunities, listTags } from '@/lib/dal/crm'
+import { listTenders } from '@/lib/dal/tenders'
 import { getEntityDocuments } from '@/lib/dal/documents'
 import { listActivity } from '@/lib/dal/activity'
 import { AccountDialog } from '@/components/crm/account-dialog'
@@ -12,6 +13,9 @@ import { ActivityFeed } from '@/components/activity-feed'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { formatEuros, formatDate, formatRelative } from '@/lib/format'
+import { tenderPath } from '@/lib/slug'
+import { TENDER_STATUS_COLORS, TENDER_STATUS_LABELS } from '@/components/tenders/constants'
+import { cn } from '@/lib/utils'
 
 export default async function AccountDetailPage({
   params,
@@ -24,14 +28,16 @@ export default async function AccountDetailPage({
   if (!account) notFound()
 
   const canEdit = ctx.role !== 'viewer'
-  const [contacts, opportunities, tags, appliedTags, documents, activity] = await Promise.all([
-    listContacts(ctx, { accountId: id, pageSize: 50 }),
-    listOpportunities(ctx).then((all) => all.filter((o) => o.account_id === id)),
-    listTags(ctx),
-    getEntityTags(ctx, 'account', id),
-    getEntityDocuments(ctx, 'account', id),
-    listActivity(ctx, { entityType: 'account', entityId: id, limit: 15 }),
-  ])
+  const [contacts, opportunities, tags, appliedTags, documents, activity, tenders] =
+    await Promise.all([
+      listContacts(ctx, { accountId: id, pageSize: 50 }),
+      listOpportunities(ctx).then((all) => all.filter((o) => o.account_id === id)),
+      listTags(ctx),
+      getEntityTags(ctx, 'account', id),
+      getEntityDocuments(ctx, 'account', id),
+      listActivity(ctx, { entityType: 'account', entityId: id, limit: 15 }),
+      listTenders(ctx, { buyerId: id, pageSize: 50 }),
+    ])
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 p-6">
@@ -131,6 +137,39 @@ export default async function AccountDetailPage({
           </section>
 
           <section className="rounded-lg border border-border p-4">
+            <h2 className="mb-3 text-sm font-semibold">
+              Appels d’offres <span className="text-muted-foreground">({tenders.count})</span>
+            </h2>
+            {tenders.rows.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Aucun dossier pour cet acheteur.</p>
+            ) : (
+              <ul className="divide-y divide-border">
+                {tenders.rows.map((t) => (
+                  <li key={t.id} className="flex items-center justify-between gap-2 py-2 text-sm">
+                    <Link
+                      href={tenderPath(orgSlug, t)}
+                      className="min-w-0 truncate font-medium hover:underline"
+                    >
+                      {t.title}
+                    </Link>
+                    <span className="flex shrink-0 items-center gap-2">
+                      <span className="text-xs text-muted-foreground tabular-nums">
+                        {formatDate(t.response_deadline)}
+                      </span>
+                      <Badge
+                        variant="secondary"
+                        className={cn('text-[10px]', TENDER_STATUS_COLORS[t.status])}
+                      >
+                        {TENDER_STATUS_LABELS[t.status]}
+                      </Badge>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          <section className="rounded-lg border border-border p-4">
             <h2 className="mb-3 text-sm font-semibold">Documents</h2>
             <EntityDocuments
               orgSlug={orgSlug}
@@ -138,6 +177,7 @@ export default async function AccountDetailPage({
               entityId={id}
               documents={documents}
               canEdit={canEdit}
+              folder={`CRM — ${account.name}`.slice(0, 90)}
             />
           </section>
         </div>

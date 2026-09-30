@@ -40,7 +40,12 @@ export default async function ContactsPage({
           <p className="text-sm text-muted-foreground">Personnes liées à vos entreprises</p>
         </div>
         {canEdit && (
-          <ContactDialog orgSlug={orgSlug} accounts={accounts} defaultOpen={sp.new === '1'} />
+          <ContactDialog
+            key={sp.new === '1' ? 'new' : 'default'}
+            orgSlug={orgSlug}
+            accounts={accounts}
+            defaultOpen={sp.new === '1'}
+          />
         )}
       </div>
 

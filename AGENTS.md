@@ -23,10 +23,23 @@ Delivery piloté par **BMAD Method** — artefacts dans `docs/` :
 - **UI** : shadcn/ui preset Base UI — pas de prop `asChild`, utiliser `render={<Comp />}`. Tokens sémantiques uniquement, dark mode par défaut.
 - **UI strings en français.**
 - **Actions sensibles** (rôle, invitation, suppression, export, partage doc) → `audit()` dans `src/lib/audit.ts`.
+- **Jointures PostgREST** : toujours nommer la FK quand la table cible est atteignable par plusieurs chemins — `organization_members` pointe DEUX fois vers `profiles` (`user_id`, `invited_by`) : sans indice (`profiles!organization_members_user_id_fkey(...)`) PostgREST renvoie PGRST201 et la liste ressort **vide en silence**. Ne jamais ignorer `error` dans un `select` imbriqué.
+- **Nommage** : tout nom produit (dossier, classeur, ZIP, fiche, mémoire, DC) passe par `src/lib/naming.ts` — les titres d'AO et de lots sont des phrases entières, reprises telles quelles elles donnaient des chemins de 238 caractères. Règles : mots de liaison retirés, troncature aux frontières de mots (jamais au milieu), listes de corps d'état résumées en « +N ».
+- **Nom des fiches PDF** (`docFilename`, `src/lib/datasheets/research.ts`) : `[Article CCTP] [Marque] [Référence/Désignation][ - Type].pdf` — ex. `5.5.3 Cemex CXB Voile.pdf`. L'article vient de `articleNumber()` (« Lot 1 Art. 5-5-3 » → « 5.5.3 ») ; sans numéro on retombe sur le préfixe de chapitre (`01i ACO Multidrain - DoP.pdf`). Le suffixe de type n'est ajouté que hors `Fiche_technique`. Migration des anciens noms : `scripts/normalize-datasheet-names.mjs`.
+- **Purge à l'export fiches** : ne supprimer QUE `Classeur_DCR` / `Arborescence_livraison` — les PDF de fiches téléchargés vivent sous le même préfixe `org_<id>/datasheets/<runId>/` ; un filtre plus large les efface (incident déjà survenu).
+- **« 1 produit = 1 fiche »** (`ensureProductDocRows`, `research.ts`) : chaque produit réel de `produits` obtient sa ligne `documents` même sans URL — sinon la couverture plafonne à ce que l'agent a émis (14 lignes pour 76 produits). Dédup par inclusion normalisée marque+référence ; les `— | —` (prescriptions/DTU) et `NON CONFORME` sont exclus ; un code citant le chapitre (« Ch. 01i ») est accepté quand le CCTP n'a pas de découpage en articles. Rattrapage d'un run : `scripts/complete-doc-rows.mjs`.
+- **Rangement documents** : une seule convention de chemin (`src/lib/folder-tree.ts`, migration `0012`) — pas de slash initial, deux racines seulement : `Société` et un dossier par AO (`AO <réf> — <titre>/DCE|Fiches techniques|DC1-DC2|Mémoire technique`). Aucun document directement à la racine.
+- **Fiches techniques — acquisition des PDF** : chaîne de repli en cascade, à respecter dans cet ordre :
+  1. recherche web multi-moteurs (`src/lib/ai/web-tools.ts` : `SEARCH_API_URL` si configurée, puis Brave → DuckDuckGo → 6 instances SearXNG → Bing). Le fournisseur d'API est **détecté d'après l'URL** (SearxNG/Brave/Serper/Tavily) : méthode GET/POST et en-têtes d'auth adaptés, `count`/`num`/`max_results` ajoutés. Un échec d'API (401/403/quota) est **remonté** (`searchHealth().apiError`) — jamais confondu avec « aucun document ». Les requêtes identiques sont mises en cache 10 min (quota et rate-limit). SearxNG auto-hébergé : activer `search.formats: [html, json]` ;
+  2. page produit → extraction du lien PDF (`resolvePdfFromPage`, `src/lib/datasheets/download.ts`) ;
+  3. passe de rattrapage ciblée, relançable (`findMissingDocUrls`) ;
+  4. **rattachement manuel garanti** (`attachDatasheetDocument` : import d'un PDF ou collage d'une URL, ligne par ligne dans le panneau).
+  Constat vérifié : les sites fabricants français sont JS/anti-bot (Weber 403 Cloudflare, PRB documenthèque JS, SIKA PDF en JS) — sitemaps, chemins `/documentation`, API WordPress et agrégateurs BTP ne rendent AUCUN PDF. Seule la recherche (ou une API) trouve les fiches. Ne jamais présenter une absence de résultat comme « le document n'existe pas » : `searchHealth()` distingue « aucun document » de « moteurs indisponibles ».
 
 ## Commandes
 
-- `npm run dev` / `build` / `lint` / `typecheck` / `test` (vitest) / `test:e2e` (playwright)
+- `npm run dev` / `build` / `lint` / `typecheck` / `test` (vitest) / `test:live` (appels réels API/BDD) / `test:e2e` (playwright)
+- Tests **live** (réseau + service role) : uniquement dans `tests/live/`, jamais dans `tests/unit/` — `npm test` doit rester hermétique et hors-ligne.
 - Types DB : `npx supabase gen types --linked > src/lib/database.types.ts` (à générer après `supabase link`)
 - Migrations : fichiers `supabase/migrations/NNNN_*.sql` versionnés, appliqués via `supabase db push`
 

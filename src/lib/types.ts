@@ -33,6 +33,7 @@ export interface OrganizationMember {
   organization_id: string
   user_id: string
   role: MembershipRole
+  job_role: JobRole | null
   invited_by: string | null
   joined_at: string
   profile?: Pick<Profile, 'full_name' | 'avatar_url'> | null
@@ -239,6 +240,7 @@ export type DocumentCategory =
   | 'financier'
   | 'memoire'
   | 'depot'
+  | 'societe'
   | 'autre'
 
 export type DocumentStatus = 'brouillon' | 'a_valider' | 'valide' | 'refuse' | 'archive'
@@ -329,7 +331,16 @@ export interface Tender {
   updated_at: string
   buyer?: Pick<Account, 'id' | 'name'> | null
   responsible?: Pick<Profile, 'id' | 'full_name'> | null
-  completeness?: { required: number; validated: number; pct: number; ready: boolean }
+  completeness?: {
+    required: number
+    validated: number
+    pct: number
+    ready: boolean
+    /** Pièces obligatoires non validées (infobulle liste). */
+    missing: { label: string; status: ChecklistItemStatus }[]
+  }
+  /** Alertes de conformité non résolues (liste des AO). */
+  alerts?: { count: number; worst: AlertSeverity } | null
 }
 
 export interface TenderLot {
@@ -451,6 +462,18 @@ export interface ActivityLog {
   entity_type: string
   entity_id: string
   action: string
+  metadata: Record<string, unknown>
+  created_at: string
+  actor?: Pick<Profile, 'full_name'> | null
+}
+
+export interface AuditLog {
+  id: string
+  organization_id: string | null
+  actor_id: string | null
+  action: string
+  entity_type: string | null
+  entity_id: string | null
   metadata: Record<string, unknown>
   created_at: string
   actor?: Pick<Profile, 'full_name'> | null

@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { requireMembership } from '@/lib/dal/auth'
 import { listAccounts } from '@/lib/dal/crm'
+import { countTendersByBuyer } from '@/lib/dal/tenders'
 import { AccountDialog } from '@/components/crm/account-dialog'
 import { SearchInput, Pagination } from '@/components/list-toolbar'
 import { RowActions } from '@/components/row-actions'
@@ -15,6 +16,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { formatRelative } from '@/lib/format'
+import { Badge } from '@/components/ui/badge'
 
 export default async function AccountsPage({
   params,
@@ -27,7 +29,10 @@ export default async function AccountsPage({
 
   const q = typeof sp.q === 'string' ? sp.q : ''
   const page = Math.max(1, Number(sp.page ?? 1) || 1)
-  const { rows, count, pageSize } = await listAccounts(ctx, { q, page })
+  const [{ rows, count, pageSize }, tenderCounts] = await Promise.all([
+    listAccounts(ctx, { q, page }),
+    countTendersByBuyer(ctx),
+  ])
   const canEdit = ctx.role !== 'viewer'
 
   return (
@@ -37,7 +42,13 @@ export default async function AccountsPage({
           <h1 className="text-2xl font-semibold">Entreprises</h1>
           <p className="text-sm text-muted-foreground">Clients, prospects et partenaires</p>
         </div>
-        {canEdit && <AccountDialog orgSlug={orgSlug} defaultOpen={sp.new === '1'} />}
+        {canEdit && (
+          <AccountDialog
+            key={sp.new === '1' ? 'new' : 'default'}
+            orgSlug={orgSlug}
+            defaultOpen={sp.new === '1'}
+          />
+        )}
       </div>
 
       <SearchInput placeholder="Rechercher une entreprise…" />
@@ -57,6 +68,7 @@ export default async function AccountsPage({
                 <TableHead>Nom</TableHead>
                 <TableHead>Domaine</TableHead>
                 <TableHead>Secteur</TableHead>
+                <TableHead>AO</TableHead>
                 <TableHead>Mis à jour</TableHead>
                 <TableHead className="w-10" />
               </TableRow>
@@ -74,6 +86,25 @@ export default async function AccountsPage({
                   </TableCell>
                   <TableCell className="text-muted-foreground">{a.domain ?? '—'}</TableCell>
                   <TableCell className="text-muted-foreground">{a.industry ?? '—'}</TableCell>
+                  <TableCell>
+                    {(() => {
+                      const c = tenderCounts.get(a.id)
+                      if (!c) return <span className="text-muted-foreground">—</span>
+                      return (
+                        <Link
+                          href={`/${orgSlug}/crm/accounts/${a.id}`}
+                          className="inline-flex items-center gap-1.5 hover:underline"
+                        >
+                          <span className="text-sm tabular-nums">{c.total}</span>
+                          {c.open > 0 && (
+                            <Badge variant="secondary" className="text-[10px]">
+                              {c.open} en cours
+                            </Badge>
+                          )}
+                        </Link>
+                      )
+                    })()}
+                  </TableCell>
                   <TableCell className="text-muted-foreground">
                     {formatRelative(a.updated_at)}
                   </TableCell>

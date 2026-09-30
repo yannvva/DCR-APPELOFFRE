@@ -44,6 +44,8 @@ export function ContactDialog({
   defaultOpen?: boolean
   trigger?: React.ReactElement
 }) {
+  // Remonté via `key` par la page quand « ?new=1 » bascule (navigation SPA
+  // depuis la palette ⌘K) — useState(defaultOpen) se réinitialise alors.
   const [open, setOpen] = useState(defaultOpen ?? false)
   const [accountId, setAccountId] = useState(contact?.account_id ?? '')
   const {

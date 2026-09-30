@@ -13,9 +13,14 @@ export default async function MembersPage({
 
   const canManage = role === 'owner' || role === 'admin'
 
+  // FK explicite : organization_members pointe deux fois vers profiles
+  // (user_id et invited_by) — sans indice, PostgREST renvoie une erreur
+  // d'ambiguïté et la page listait zéro membre.
   const { data: members } = await supabase
     .from('organization_members')
-    .select('user_id, role, joined_at, profiles(full_name, avatar_url)')
+    .select(
+      'user_id, role, joined_at, profiles!organization_members_user_id_fkey(full_name, avatar_url)',
+    )
     .eq('organization_id', org.id)
     .order('joined_at')
 

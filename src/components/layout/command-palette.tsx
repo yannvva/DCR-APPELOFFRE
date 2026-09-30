@@ -11,6 +11,7 @@ import {
   CircleDot,
   FileSignature,
   LayoutDashboard,
+  ListTodo,
   Users,
   Settings,
   UserCog,
@@ -25,6 +26,7 @@ import {
   CommandList,
   CommandSeparator,
 } from '@/components/ui/command'
+import { tenderPath } from '@/lib/slug'
 
 interface SearchResult {
   type: 'account' | 'contact' | 'opportunity' | 'project' | 'task' | 'document' | 'tender'
@@ -33,18 +35,19 @@ interface SearchResult {
   sub?: string
 }
 
-const TYPE_META: Record<SearchResult['type'], { icon: typeof FileText; path: (org: string, id: string) => string }> = {
+const TYPE_META: Record<SearchResult['type'], { icon: typeof FileText; path: (org: string, id: string, label: string) => string }> = {
   account: { icon: Building2, path: (o, id) => `/${o}/crm/accounts/${id}` },
   contact: { icon: Contact, path: (o, id) => `/${o}/crm/contacts/${id}` },
   opportunity: { icon: CircleDot, path: (o) => `/${o}/crm/opportunities` },
   project: { icon: FolderKanban, path: (o, id) => `/${o}/projects/${id}` },
   task: { icon: CheckSquare, path: (o) => `/${o}/projects` },
   document: { icon: FileText, path: (o) => `/${o}/documents` },
-  tender: { icon: FileSignature, path: (o, id) => `/${o}/tenders/${id}` },
+  tender: { icon: FileSignature, path: (o, id, label) => tenderPath(o, { id, title: label }) },
 }
 
 const NAV = [
   { label: 'Dashboard', icon: LayoutDashboard, path: 'dashboard' },
+  { label: 'À faire', icon: ListTodo, path: 'todo' },
   { label: 'Appels d’offres', icon: FileSignature, path: 'tenders' },
   { label: 'Opportunités', icon: CircleDot, path: 'crm/opportunities' },
   { label: 'Entreprises', icon: Building2, path: 'crm/accounts' },
@@ -52,6 +55,7 @@ const NAV = [
   { label: 'Leads', icon: Users, path: 'crm/leads' },
   { label: 'Projets', icon: FolderKanban, path: 'projects' },
   { label: 'Documents', icon: FileText, path: 'documents' },
+  { label: 'Société', icon: Building2, path: 'societe' },
   { label: 'Membres', icon: UserCog, path: 'members' },
   { label: 'Paramètres', icon: Settings, path: 'settings' },
 ] as const
@@ -62,6 +66,7 @@ const ACTIONS = [
   { label: 'Nouveau contact', icon: Plus, path: 'crm/contacts?new=1' },
   { label: 'Nouvelle opportunité', icon: Plus, path: 'crm/opportunities?new=1' },
   { label: 'Nouveau projet', icon: Plus, path: 'projects?new=1' },
+  { label: 'Nouveau lead', icon: Plus, path: 'crm/leads?new=1' },
 ] as const
 
 export function CommandPalette({ orgSlug }: { orgSlug: string }) {
@@ -71,6 +76,7 @@ export function CommandPalette({ orgSlug }: { orgSlug: string }) {
   const [loading, setLoading] = useState(false)
   const router = useRouter()
   const timer = useRef<ReturnType<typeof setTimeout>>(null)
+  const reqId = useRef(0)
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -97,12 +103,18 @@ export function CommandPalette({ orgSlug }: { orgSlug: string }) {
     if (timer.current) clearTimeout(timer.current)
     if (query.trim().length < 2) return
     timer.current = setTimeout(async () => {
+      // Requêtes en vol : seule la dernière réponse doit écrire les résultats.
+      const id = ++reqId.current
       try {
         const res = await fetch(`/api/${orgSlug}/search?q=${encodeURIComponent(query)}`)
         const data = await res.json()
-        setResults(data.results ?? [])
+        if (id === reqId.current) setResults(data.results ?? [])
+      } catch {
+        // Réseau coupé ou réponse non-JSON : résultats vides plutôt qu'une
+        // promesse rejetée silencieuse.
+        if (id === reqId.current) setResults([])
       } finally {
-        setLoading(false)
+        if (id === reqId.current) setLoading(false)
       }
     }, 200)
     return () => {
@@ -138,7 +150,7 @@ export function CommandPalette({ orgSlug }: { orgSlug: string }) {
                 <CommandItem
                   key={`${r.type}-${r.id}`}
                   value={`${r.type}-${r.id}-${r.label}`}
-                  onSelect={() => go(meta.path(orgSlug, r.id))}
+                  onSelect={() => go(meta.path(orgSlug, r.id, r.label))}
                 >
                   <Icon className="size-4 text-muted-foreground" />
                   <span className="truncate">{r.label}</span>

@@ -1,8 +1,15 @@
 import { notFound } from 'next/navigation'
 import { requireMembership } from '@/lib/dal/auth'
 import { getDefaultPipeline, listOpportunities, listContacts, searchAccounts } from '@/lib/dal/crm'
+import {
+  listUpcomingTenders,
+  listUpcomingSiteVisits,
+  listUpcomingChecklistItems,
+  listOpenTenderAlerts,
+} from '@/lib/dal/tenders'
 import { OpportunitiesKanban } from '@/components/crm/opportunities-kanban'
 import { OpportunityDialog } from '@/components/crm/opportunity-dialog'
+import { TenderAgenda } from '@/components/crm/tender-agenda'
 
 export default async function OpportunitiesPage({
   params,
@@ -13,11 +20,24 @@ export default async function OpportunitiesPage({
   const ctx = await requireMembership(orgSlug)
   if (!ctx) notFound()
 
-  const [pipelineData, opportunities, accounts, contacts] = await Promise.all([
+  const [
+    pipelineData,
+    opportunities,
+    accounts,
+    contacts,
+    deadlines,
+    visits,
+    checklistItems,
+    alerts,
+  ] = await Promise.all([
     getDefaultPipeline(ctx),
     listOpportunities(ctx),
     searchAccounts(ctx, '', 100),
     listContacts(ctx, { pageSize: 100 }),
+    listUpcomingTenders(ctx, 14, 8),
+    listUpcomingSiteVisits(ctx, 30, 8),
+    listUpcomingChecklistItems(ctx, 14, 12),
+    listOpenTenderAlerts(ctx, 8),
   ])
 
   if (!pipelineData) {
@@ -39,6 +59,7 @@ export default async function OpportunitiesPage({
         </div>
         {canEdit && (
           <OpportunityDialog
+            key={isNew === '1' ? 'new' : 'default'}
             orgSlug={orgSlug}
             accounts={accounts}
             contacts={contacts.rows.map((c) => ({
@@ -49,6 +70,13 @@ export default async function OpportunitiesPage({
           />
         )}
       </div>
+      <TenderAgenda
+        orgSlug={orgSlug}
+        deadlines={deadlines}
+        visits={visits}
+        checklist={checklistItems}
+        alerts={alerts}
+      />
       <OpportunitiesKanban
         orgSlug={orgSlug}
         stages={pipelineData.stages}

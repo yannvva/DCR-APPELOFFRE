@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import { FolderPlus, Upload } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { uploadDocument } from '@/app/actions/documents'
+import { isRootFolder } from '@/lib/folder-tree'
 
 export function DocumentUpload({ orgSlug, folder }: { orgSlug: string; folder: string }) {
   const router = useRouter()
@@ -13,16 +14,25 @@ export function DocumentUpload({ orgSlug, folder }: { orgSlug: string; folder: s
   const [pending, startTransition] = useTransition()
   const [newFolder, setNewFolder] = useState('')
 
-  function pick() {
-    if (newFolder.trim()) {
-      router.push(
-        `/${orgSlug}/documents?folder=${encodeURIComponent(
-          '/' + newFolder.trim().replace(/^\/+|\/+$/g, ''),
-        )}`,
-      )
-      return
-    }
-    inputRef.current?.click()
+  const atRoot = isRootFolder(folder)
+
+  function createFolder() {
+    const name = newFolder.trim().replace(/^\/+|\/+$/g, '')
+    if (!name) return
+    // Toujours RELATIF au dossier courant : jamais de dossier direct à la
+    // racine (les seules racines sont Société et les dossiers d'AO).
+    const path = `${folder === '/' ? '' : folder + '/'}${name}`
+    router.push(`/${orgSlug}/documents?folder=${encodeURIComponent(path)}`)
+    setNewFolder('')
+  }
+
+  // À la racine : pas d'envoi ni de création — on guide vers un dossier.
+  if (atRoot) {
+    return (
+      <p className="max-w-xs text-right text-xs text-muted-foreground">
+        Ouvrez un dossier (Société ou un appel d’offres) pour envoyer un fichier.
+      </p>
+    )
   }
 
   return (
@@ -48,21 +58,25 @@ export function DocumentUpload({ orgSlug, folder }: { orgSlug: string; folder: s
       <input
         value={newFolder}
         onChange={(e) => setNewFolder(e.target.value)}
-        onKeyDown={(e) => e.key === 'Enter' && pick()}
-        placeholder="dossier/nouveau…"
+        onKeyDown={(e) => e.key === 'Enter' && createFolder()}
+        placeholder="sous-dossier…"
         className="h-8 w-36 rounded-md border border-input bg-transparent px-2 text-xs placeholder:text-muted-foreground"
-        aria-label="Nom du nouveau dossier"
+        aria-label="Nom du sous-dossier"
       />
-      <Button variant="outline" size="sm" onClick={pick} disabled={pending}>
-        {newFolder.trim() ? (
-          <>
-            <FolderPlus className="size-4" /> Créer le dossier
-          </>
-        ) : (
-          <>
-            <Upload className="size-4" /> Envoyer
-          </>
-        )}
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={createFolder}
+        disabled={pending || !newFolder.trim()}
+      >
+        <FolderPlus className="size-4" /> Sous-dossier
+      </Button>
+      <Button
+        size="sm"
+        onClick={() => inputRef.current?.click()}
+        disabled={pending}
+      >
+        <Upload className="size-4" /> Envoyer
       </Button>
     </div>
   )

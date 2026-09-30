@@ -69,23 +69,40 @@ export function TaskDialog({
   const [assignees, setAssignees] = useState<string[]>(
     task?.assignees?.map((a) => a.user_id) ?? [],
   )
+
+  const defaults = () => ({
+    title: task?.title ?? '',
+    description: task?.description ?? '',
+    status: task?.status ?? 'todo',
+    priority: task?.priority ?? 'medium',
+    dueDate: task?.due_date ?? '',
+    parentTaskId: task?.parent_task_id ?? parentTaskId ?? '',
+    assigneeIds: task?.assignees?.map((a) => a.user_id) ?? [],
+  })
   const {
     register,
     handleSubmit,
     setError,
+    reset,
     formState: { errors, isSubmitting },
   } = useForm<FormValues, unknown, Values>({
     resolver: zodResolver(taskSchema),
-    defaultValues: {
-      title: task?.title ?? '',
-      description: task?.description ?? '',
-      status: task?.status ?? 'todo',
-      priority: task?.priority ?? 'medium',
-      dueDate: task?.due_date ?? '',
-      parentTaskId: task?.parent_task_id ?? parentTaskId ?? '',
-      assigneeIds: task?.assignees?.map((a) => a.user_id) ?? [],
-    },
+    defaultValues: defaults(),
   })
+
+  // Réinitialisation à chaque ouverture : les valeurs RHF et les selects
+  // survivent à la fermeture de la modale — sans reset, une création
+  // afficherait la tâche précédemment saisie.
+  function handleOpenChange(o: boolean) {
+    if (o) {
+      const d = defaults()
+      reset(d)
+      setStatus(d.status)
+      setPriority(d.priority)
+      setAssignees(d.assigneeIds)
+    }
+    setOpen(o)
+  }
 
   async function onSubmit(values: Values) {
     const input = { ...values, status, priority, assigneeIds: assignees }
@@ -115,7 +132,7 @@ export function TaskDialog({
     ))
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       {triggerEl && <DialogTrigger render={triggerEl} />}
       <DialogContent>
         <DialogHeader>
