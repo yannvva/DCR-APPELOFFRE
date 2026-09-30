@@ -95,10 +95,12 @@ live('Pipeline fiches — recherche d’URL puis téléchargement des manquants'
         '@/app/actions/datasheets'
       )
 
-      const t0 = Date.now()
-      const found = await findMissingDocUrls(ORG_SLUG, TENDER_ID, RUN_ID)
-      const tSearch = ((Date.now() - t0) / 1000).toFixed(1)
-      console.log(`findMissingDocUrls (${tSearch}s) →`, JSON.stringify(found))
+      if (!process.env.SKIP_SEARCH) {
+        const t0 = Date.now()
+        const found = await findMissingDocUrls(ORG_SLUG, TENDER_ID, RUN_ID)
+        const tSearch = ((Date.now() - t0) / 1000).toFixed(1)
+        console.log(`findMissingDocUrls (${tSearch}s) →`, JSON.stringify(found))
+      }
 
       const t1 = Date.now()
       const dl = await downloadRunPdfs(ORG_SLUG, TENDER_ID, RUN_ID)
@@ -150,7 +152,10 @@ live('Pipeline fiches — recherche d’URL puis téléchargement des manquants'
       //    document_id valide avant, il doit le conserver.
       const reUploaded = docsAfter.filter((d) => {
         const prev = dlBefore.find(
-          (b) => b.document_id && (b.filename === d.filename || b.url === d.url),
+          (b) =>
+            b.document_id &&
+            ((d.filename !== '—' && b.filename === d.filename) ||
+              (b.url && b.url === d.url)),
         )
         return (
           prev?.document_id &&

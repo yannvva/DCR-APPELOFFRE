@@ -8,6 +8,11 @@ const DC1 = [/\bdc1\b|lettre de candidature/i]
 const DC2 = [/\bdc2\b|d[ée]claration du candidat/i]
 const MEMOIRE = [/m[ée]moire/i]
 const TELEVERSE = [/t[ée]l[ée]vers/i]
+// Même motifs que dce.ts : « RC » nu exige « analys » proche.
+const RC_ANALYSE = [
+  /r[èe]glement de consultation/i,
+  /\brc\b.{0,30}analys|analys.{0,30}\brc\b/i,
+]
 
 describe('checklistItemMatches — ciblage des lignes par livrable', () => {
   it('le DC1 généré cible la ligne lettre de candidature', () => {
@@ -42,5 +47,19 @@ describe('checklistItemMatches — ciblage des lignes par livrable', () => {
       checklistItemMatches('Dossier téléversé sur la plateforme de dépôt', TELEVERSE),
     ).toBe(true)
     expect(checklistItemMatches('Récépissé de dépôt archivé', TELEVERSE)).toBe(false)
+  })
+
+  it('« RC analysé » cible le règlement mais jamais l’assurance RC pro', () => {
+    expect(
+      checklistItemMatches('Règlement de consultation (RC) analysé', RC_ANALYSE),
+    ).toBe(true)
+    expect(checklistItemMatches('RC analysé par les agents', RC_ANALYSE)).toBe(true)
+    // Garde-fou métier : « RC » seul ne doit pas viser l’assurance.
+    expect(
+      checklistItemMatches('Assurance RC professionnelle', RC_ANALYSE),
+    ).toBe(false)
+    expect(
+      checklistItemMatches('Attestation assurance RC décennale', RC_ANALYSE),
+    ).toBe(false)
   })
 })

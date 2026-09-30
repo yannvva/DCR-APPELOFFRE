@@ -633,7 +633,9 @@ export async function applyDceAnalysis(
       supabase,
       org.id,
       tenderId,
-      [/r[èe]glement de consultation|\brc\b/i],
+      // « RC » nu exige « analys » à proximité — sinon « Assurance RC
+      // professionnelle » recevrait le règlement en pièce jointe.
+      [/r[èe]glement de consultation/i, /\brc\b.{0,30}analys|analys.{0,30}\brc\b/i],
       {
         ...(rcLink?.document_id ? { document_id: rcLink.document_id } : {}),
         status: 'a_verifier',

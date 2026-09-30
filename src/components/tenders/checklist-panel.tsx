@@ -50,6 +50,7 @@ import {
   REQUIREMENT_LABELS,
 } from './constants'
 import { ChecklistItemDialog, STATUS_BADGE } from './checklist-item-dialog'
+import { DocumentPicker } from '@/components/documents/document-picker'
 import { formatDate } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import type {
@@ -227,7 +228,7 @@ export function ChecklistPanel({
                         </SelectTrigger>
                         <SelectContent>
                           {CATEGORY_ORDER.map((c) => (
-                            <SelectItem key={c} value={c}>
+                            <SelectItem key={c} value={c} label={CHECKLIST_CATEGORY_LABELS[c]}>
                               {CHECKLIST_CATEGORY_LABELS[c]}
                             </SelectItem>
                           ))}
@@ -244,9 +245,9 @@ export function ChecklistPanel({
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="obligatoire">Obligatoire</SelectItem>
-                          <SelectItem value="recommande">Recommandé</SelectItem>
-                          <SelectItem value="facultatif">Facultatif</SelectItem>
+                          <SelectItem value="obligatoire" label="Obligatoire">Obligatoire</SelectItem>
+                          <SelectItem value="recommande" label="Recommandé">Recommandé</SelectItem>
+                          <SelectItem value="facultatif" label="Facultatif">Facultatif</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
@@ -260,8 +261,12 @@ export function ChecklistPanel({
                         </SelectTrigger>
                         <SelectContent>
                           {members.map((m) => (
-                            <SelectItem key={m.user_id} value={m.user_id}>
-                              {m.full_name ?? m.user_id.slice(0, 8)}
+                            <SelectItem
+                              key={m.user_id}
+                              value={m.user_id}
+                              label={m.full_name ?? 'Membre'}
+                            >
+                              {m.full_name ?? 'Membre'}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -380,28 +385,19 @@ export function ChecklistPanel({
 
                   {canEdit && (
                     <div className="flex items-center gap-2">
-                      <Select
-                        value={item.document_id ?? ''}
-                        onValueChange={(v) =>
+                      <DocumentPicker
+                        className="w-64"
+                        documents={documents}
+                        value={item.document_id}
+                        currentLabel={item.document?.name}
+                        disabled={pending}
+                        onSelect={(docId) =>
                           act(
-                            () => attachItemDocument(orgSlug, item.id, tenderId, v || null),
-                            v ? 'Pièce attachée' : 'Pièce détachée',
+                            () => attachItemDocument(orgSlug, item.id, tenderId, docId),
+                            docId ? 'Pièce attachée' : 'Pièce détachée',
                           )
                         }
-                        disabled={pending}
-                      >
-                        <SelectTrigger className="h-8 w-44 text-xs">
-                          <SelectValue placeholder="Attacher une pièce…" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="">— Aucune pièce —</SelectItem>
-                          {documents.map((d) => (
-                            <SelectItem key={d.id} value={d.id}>
-                              {d.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      />
                       <Select
                         value={item.assignee_id ?? ''}
                         onValueChange={(v) =>
@@ -413,9 +409,15 @@ export function ChecklistPanel({
                           <SelectValue placeholder="Responsable" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="">—</SelectItem>
+                          <SelectItem value="" label="—">
+                            —
+                          </SelectItem>
                           {members.map((m) => (
-                            <SelectItem key={m.user_id} value={m.user_id}>
+                            <SelectItem
+                              key={m.user_id}
+                              value={m.user_id}
+                              label={m.full_name ?? 'Membre'}
+                            >
                               {m.full_name ?? 'Membre'}
                             </SelectItem>
                           ))}
@@ -464,7 +466,7 @@ export function ChecklistPanel({
                           {(
                             Object.keys(CHECKLIST_STATUS_LABELS) as ChecklistItemStatus[]
                           ).map((s) => (
-                            <SelectItem key={s} value={s}>
+                            <SelectItem key={s} value={s} label={CHECKLIST_STATUS_LABELS[s]}>
                               {CHECKLIST_STATUS_LABELS[s]}
                             </SelectItem>
                           ))}

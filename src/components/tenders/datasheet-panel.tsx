@@ -15,9 +15,11 @@ import {
   Loader2,
   Package,
   Plus,
+  Search,
   Table2,
   Trash2,
   Upload,
+  X,
 } from 'lucide-react'
 import {
   AlertDialog,
@@ -84,6 +86,7 @@ import type { TenderLot } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import { formatDate } from '@/lib/format'
 import { AObtenirPanel, EcartsPanel } from '@/components/tenders/ecarts-panel'
+import { PaginationBar, usePager } from '@/components/pagination-bar'
 
 const STATUT_STYLE: Record<string, string> = {
   OK: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-300',
@@ -148,6 +151,10 @@ export function DatasheetPanel({
   const [researchProgress, setResearchProgress] = useState<string | null>(null)
   // Pipeline enchaîné : 0 dépouillage, 1 recherche, 2 PDF, 3 livrables.
   const [pipelineStep, setPipelineStep] = useState<number | null>(null)
+  const [pdfFilter, setPdfFilter] = useState('')
+  // Onglet courant conservé au router.refresh() (le key={doneChapters}
+  // renvoyait au 1er onglet après chaque recherche).
+  const [tabPick, setTabPick] = useState<string | null>(null)
   const importRef = useRef<HTMLInputElement>(null)
 
   const chapterCodes = Object.keys(run?.chapters ?? {})
@@ -173,6 +180,18 @@ export function DatasheetPanel({
   const allAObtenir = Object.values(run?.result ?? {}).flatMap(
     (r) => r.a_obtenir ?? [],
   )
+
+  // PDF récupérés : filtre instantané (marque, référence, désignation, type,
+  // code chapitre) puis pagination — la grille 2 colonnes reste compacte.
+  const pdfNeedle = pdfFilter.trim().toLowerCase()
+  const deliveredVisible = pdfNeedle
+    ? delivered.filter((d) =>
+        `${d.code} ${d.marque} ${d.reference} ${d.designation} ${d.type_document.replace(/_/g, ' ')}`
+          .toLowerCase()
+          .includes(pdfNeedle),
+      )
+    : delivered
+  const deliveredPager = usePager(deliveredVisible, 12)
 
   // Options du sélecteur : les lots du dossier, sinon ceux détectés par
   // l'analyse DCE (préfixe « a: » = pas encore de ligne tender_lots).
@@ -533,7 +552,11 @@ export function DatasheetPanel({
             </SelectTrigger>
             <SelectContent>
               {runs.map((r) => (
-                <SelectItem key={r.id} value={r.id}>
+                <SelectItem
+                  key={r.id}
+                  value={r.id}
+                  label={`${r.lot_label} — ${formatDate(r.created_at)}`}
+                >
                   {r.lot_label} — {formatDate(r.created_at)}
                 </SelectItem>
               ))}
@@ -572,7 +595,11 @@ export function DatasheetPanel({
                     </SelectTrigger>
                     <SelectContent>
                       {lotOptions.map((l) => (
-                        <SelectItem key={l.value} value={l.value}>
+                        <SelectItem
+                          key={l.value}
+                          value={l.value}
+                          label={`Lot ${l.number} — ${l.title}`}
+                        >
                           Lot {l.number} — {l.title}
                         </SelectItem>
                       ))}
@@ -888,28 +915,81 @@ export function DatasheetPanel({
                     les PDF » après la recherche web.
                   </p>
                 ) : (
-                  <ul className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
-                    {delivered.map((d) => (
-                      <li key={d.document_id ?? d.filename}>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-auto w-full justify-start gap-2 px-3 py-2 text-left"
-                          onClick={() => d.document_id && openDocument(d.document_id)}
-                        >
-                          <CheckCircle2 className="size-4 shrink-0 text-emerald-500" />
-                          <span className="min-w-0 flex-1">
-                            <span className="block truncate text-xs font-medium">
-                              {d.marque} — {d.reference}
-                            </span>
-                            <span className="block truncate text-[10px] text-muted-foreground">
-                              {d.type_document.replace(/_/g, ' ')} · {d.designation}
-                            </span>
-                          </span>
-                        </Button>
-                      </li>
-                    ))}
-                  </ul>
+                  <>
+                    {delivered.length > 12 && (
+                      <div className="relative mb-2 w-full sm:w-64">
+                        <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                        <input
+                          value={pdfFilter}
+                          onChange={(e) => {
+                            setPdfFilter(e.target.value)
+                            deliveredPager.setPage(0)
+                          }}
+                          placeholder="Filtrer (marque, référence…)…"
+                          className="h-8 w-full rounded-lg border border-input bg-transparent pl-8 pr-7 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                          aria-label="Filtrer les PDF récupérés"
+                        />
+                        {pdfFilter && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPdfFilter('')
+                              deliveredPager.setPage(0)
+                            }}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                            aria-label="Effacer le filtre"
+                          >
+                            <X className="size-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    )}
+                    {deliveredVisible.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">
+                        Aucun PDF ne correspond au filtre.
+                      </p>
+                    ) : (
+                      <ul className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+                        {deliveredPager.slice.map((d) => (
+                          // Plusieurs documents peuvent partager le même PDF
+                          // officiel (même document_id) — filename est la clé
+                          // unique (dedupeFilenames la garantit).
+                          <li key={d.filename}>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-auto w-full justify-start gap-2 px-3 py-2 text-left"
+                              onClick={() =>
+                                d.document_id && openDocument(d.document_id)
+                              }
+                            >
+                              <CheckCircle2 className="size-4 shrink-0 text-emerald-500" />
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate text-xs font-medium">
+                                  {d.marque} — {d.reference}
+                                </span>
+                                <span className="block truncate text-[10px] text-muted-foreground">
+                                  {d.type_document.replace(/_/g, ' ')} ·{' '}
+                                  {d.designation}
+                                </span>
+                              </span>
+                              <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+                                {d.code}
+                              </span>
+                            </Button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    <PaginationBar
+                      className="mt-3"
+                      page={deliveredPager.page}
+                      pageCount={deliveredPager.pageCount}
+                      onPage={deliveredPager.setPage}
+                      total={deliveredVisible.length}
+                      pageSize={deliveredPager.pageSize}
+                    />
+                  </>
                 )}
               </CardContent>
             </Card>
@@ -1002,10 +1082,18 @@ export function DatasheetPanel({
             </Card>
           )}
 
-          {/* Résultats par chapitre */}
+          {/* Résultats par chapitre — onglet contrôlé : un router.refresh()
+              (recherche d'un autre chapitre) ne renvoie plus au 1er onglet. */}
           {doneChapters.length > 0 && (
-            <Tabs key={doneChapters.join(',')} defaultValue={doneChapters[0]}>
-              <TabsList>
+            <Tabs
+              value={
+                tabPick && doneChapters.includes(tabPick)
+                  ? tabPick
+                  : doneChapters[0]
+              }
+              onValueChange={(v) => setTabPick(String(v))}
+            >
+              <TabsList className="h-auto max-w-full flex-wrap justify-start">
                 {doneChapters.map((code) => (
                   <TabsTrigger key={code} value={code}>
                     {run.chapters[code]?.onglet ?? code}
@@ -1195,6 +1283,9 @@ function ChapterView({
   canEdit: boolean
   onAttached: () => void
 }) {
+  const produitsPager = usePager(result.produits, 15)
+  const docsPager = usePager(result.documents, 15)
+  const confPager = usePager(result.conformite, 15)
   return (
     <div className="space-y-4">
       {/* Produits */}
@@ -1219,7 +1310,7 @@ function ChapterView({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {result.produits.map((p, i) => (
+              {produitsPager.slice.map((p, i) => (
                 <TableRow key={i}>
                   <TableCell className="font-mono text-xs">{p.code}</TableCell>
                   <TableCell className="text-sm">{p.designation}</TableCell>
@@ -1232,6 +1323,14 @@ function ChapterView({
               ))}
             </TableBody>
           </Table>
+          <PaginationBar
+            className="border-t border-border px-3 py-2"
+            page={produitsPager.page}
+            pageCount={produitsPager.pageCount}
+            onPage={produitsPager.setPage}
+            total={result.produits.length}
+            pageSize={produitsPager.pageSize}
+          />
         </CardContent>
       </Card>
 
@@ -1257,7 +1356,7 @@ function ChapterView({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {result.documents.map((d, i) => (
+              {docsPager.slice.map((d, i) => (
                 <TableRow key={i}>
                   <TableCell className="font-mono text-xs">{d.code}</TableCell>
                   <TableCell className="text-sm">
@@ -1314,7 +1413,9 @@ function ChapterView({
                             tenderId={tenderId}
                             runId={runId}
                             code={code}
-                            docIndex={i}
+                            docIndex={
+                              docsPager.page * docsPager.pageSize + i
+                            }
                             label={`${d.marque} ${d.reference}`}
                             onAttached={onAttached}
                           />
@@ -1326,6 +1427,14 @@ function ChapterView({
               ))}
             </TableBody>
           </Table>
+          <PaginationBar
+            className="border-t border-border px-3 py-2"
+            page={docsPager.page}
+            pageCount={docsPager.pageCount}
+            onPage={docsPager.setPage}
+            total={result.documents.length}
+            pageSize={docsPager.pageSize}
+          />
         </CardContent>
       </Card>
 
@@ -1351,7 +1460,7 @@ function ChapterView({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {result.conformite.map((c, i) => (
+                {confPager.slice.map((c, i) => (
                   <TableRow key={i}>
                     <TableCell className="font-mono text-xs">
                       {c.code}
@@ -1383,6 +1492,14 @@ function ChapterView({
                 ))}
               </TableBody>
             </Table>
+            <PaginationBar
+              className="border-t border-border px-3 py-2"
+              page={confPager.page}
+              pageCount={confPager.pageCount}
+              onPage={confPager.setPage}
+              total={result.conformite.length}
+              pageSize={confPager.pageSize}
+            />
           </CardContent>
         </Card>
       )}

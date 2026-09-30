@@ -26,8 +26,9 @@ export async function resolvePdfFromPage(
   const raw = pageUrl.trim()
   const candidate = /^[a-z][a-z0-9+.-]*:/i.test(raw) ? raw : `https://${raw}`
   let page: Response
+  let url: URL
   try {
-    const url = new URL(candidate)
+    url = new URL(candidate)
     if (!isSafeUrl(url)) return { error: 'URL non autorisée' }
     page = await fetch(url, {
       signal: AbortSignal.timeout(TIMEOUT_MS),
@@ -41,6 +42,17 @@ export async function resolvePdfFromPage(
     })
   } catch {
     return { error: 'page produit inaccessible' }
+  }
+  // Même garde-fou que fetchPdf : une page officielle ne doit pas rebondir
+  // vers une adresse interne/privée (les liens extraits seraient résolus
+  // sur cet hôte, puis rejetés par fetchPdf — mais autant couper net).
+  if (page.url && page.url !== url.toString()) {
+    try {
+      if (!isSafeUrl(new URL(page.url)))
+        return { error: 'Redirection vers une URL non autorisée' }
+    } catch {
+      return { error: 'Redirection vers une URL non autorisée' }
+    }
   }
   if (!page.ok) return { error: `page produit HTTP ${page.status}` }
   // Pages produit lourdes (Liferay/CEMEX ≈ 530 Ko) : les liens « Télécharger

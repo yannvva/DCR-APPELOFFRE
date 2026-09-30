@@ -4,7 +4,15 @@ import { useState } from 'react'
 import { Controller, useFieldArray, useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { toast } from 'sonner'
-import { CheckCircle2, Loader2, Plus, RefreshCw, Sparkles, Trash2 } from 'lucide-react'
+import {
+  CheckCircle2,
+  ClipboardPaste,
+  Loader2,
+  Plus,
+  RefreshCw,
+  Sparkles,
+  Trash2,
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -219,6 +227,12 @@ export function TenderDialog({
   const { fields, append, remove } = useFieldArray({ control, name: 'lots' })
   const dceUrlValue = String(useWatch({ control, name: 'dceUrl' }) ?? '')
   const deadlineValue = useWatch({ control, name: 'responseDeadline' })
+  const questionsValue = useWatch({ control, name: 'questionsDeadline' })
+  const siteVisitValue = useWatch({ control, name: 'siteVisitAt' })
+  const priceWeightValue = useWatch({ control, name: 'priceWeight' })
+  const technicalWeightValue = useWatch({ control, name: 'technicalWeight' })
+  const criteriaTotal =
+    (Number(priceWeightValue) || 0) + (Number(technicalWeightValue) || 0)
 
   // Réinitialisation complète à chaque ouverture (annulation propre + données fraîches)
   function handleOpenChange(v: boolean) {
@@ -377,10 +391,15 @@ export function TenderDialog({
           className="flex min-h-0 flex-1 flex-col gap-4"
         >
           {!tender && (
-            <div className="space-y-2 rounded-lg border border-dashed border-primary/40 bg-primary/5 p-3">
-              <Label htmlFor="importUrl" className="flex items-center gap-1.5 text-sm font-medium">
-                <Sparkles className="size-4" /> Importer depuis une URL d’avis
-              </Label>
+            <div className="space-y-2.5 rounded-lg border border-dashed border-primary/40 bg-primary/5 p-3">
+              <div className="flex items-center justify-between gap-2">
+                <Label htmlFor="importUrl" className="flex items-center gap-1.5 text-sm font-medium">
+                  <Sparkles className="size-4 text-primary" /> Import automatique depuis un avis
+                </Label>
+                <p className="hidden text-[11px] text-muted-foreground sm:block">
+                  PLACE · AWS · France Marchés · Marchés Online…
+                </p>
+              </div>
               <div className="flex gap-2">
                 <Input
                   id="importUrl"
@@ -389,13 +408,43 @@ export function TenderDialog({
                     setImportUrl(e.target.value)
                     setPreview(null)
                   }}
-                  placeholder="https://www.francemarches.com/appel-offre/…"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      analyzeUrl()
+                    }
+                  }}
+                  placeholder="Collez l’URL de l’avis — francemarches.com/appel-offre/…"
                   inputMode="url"
                   autoFocus
+                  className="bg-background"
                 />
                 <Button
                   type="button"
                   variant="outline"
+                  size="icon"
+                  title="Coller l’URL depuis le presse-papiers puis analyser"
+                  disabled={importing}
+                  onClick={async () => {
+                    try {
+                      const text = await navigator.clipboard.readText()
+                      const url = text.trim()
+                      if (!url) {
+                        toast.error('Presse-papiers vide.')
+                        return
+                      }
+                      setImportUrl(url)
+                      setPreview(null)
+                      if (/^https?:\/\//.test(url)) analyzeUrl(url)
+                    } catch {
+                      toast.error('Accès au presse-papiers refusé — collez avec Ctrl+V.')
+                    }
+                  }}
+                >
+                  <ClipboardPaste className="size-4" />
+                </Button>
+                <Button
+                  type="button"
                   onClick={() => analyzeUrl()}
                   disabled={importing || !importUrl.trim()}
                 >
@@ -416,8 +465,8 @@ export function TenderDialog({
                 />
               ) : (
                 <p className="text-xs text-muted-foreground">
-                  Extraction : intitulé, référence, acheteur, deadlines, visite de site,
-                  montant, plateforme. Les champs sont prévisualisés avant application.
+                  Pré-remplit intitulé, référence, acheteur, deadlines, visite, montant et
+                  plateforme — vous validez avant application.
                 </p>
               )}
             </div>
@@ -428,25 +477,27 @@ export function TenderDialog({
             onValueChange={(v) => setTab(v as Tab)}
             className="flex min-h-0 flex-1 flex-col"
           >
-            <TabsList className="grid w-full grid-cols-3">
-              <TabsTrigger value="identification" className="min-w-0 whitespace-nowrap">
-                Identification
-                {errCount('identification') > 0 && (
-                  <span className="size-1.5 rounded-full bg-destructive" />
-                )}
-              </TabsTrigger>
-              <TabsTrigger value="echeances" className="min-w-0 whitespace-nowrap">
-                Échéances & procédure
-                {errCount('echeances') > 0 && (
-                  <span className="size-1.5 rounded-full bg-destructive" />
-                )}
-              </TabsTrigger>
-              <TabsTrigger value="organisation" className="min-w-0 whitespace-nowrap">
-                Organisation
-                {errCount('organisation') > 0 && (
-                  <span className="size-1.5 rounded-full bg-destructive" />
-                )}
-              </TabsTrigger>
+            <TabsList className="grid h-auto w-full grid-cols-3 gap-1 p-1">
+              {(
+                [
+                  ['identification', 'Identification'],
+                  ['echeances', 'Échéances & procédure'],
+                  ['organisation', 'Organisation'],
+                ] as const
+              ).map(([value, label]) => (
+                <TabsTrigger
+                  key={value}
+                  value={value}
+                  className="min-w-0 gap-1.5 px-2 py-1.5"
+                >
+                  {/* truncate : sans ça le libellé nowrap déborde sur l'onglet
+                      voisin quand la modale rétrécit. */}
+                  <span className="truncate">{label}</span>
+                  {errCount(value) > 0 && (
+                    <span className="size-1.5 shrink-0 rounded-full bg-destructive" />
+                  )}
+                </TabsTrigger>
+              ))}
             </TabsList>
 
             <div className="min-h-0 flex-1 overflow-y-auto pr-1 pt-4">
@@ -563,6 +614,7 @@ export function TenderDialog({
                       type="datetime-local"
                       {...register('questionsDeadline')}
                     />
+                    <DeadlineHint value={questionsValue} />
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
@@ -573,6 +625,7 @@ export function TenderDialog({
                   <div className="space-y-1.5">
                     <Label htmlFor="siteVisitAt">Visite de site</Label>
                     <Input id="siteVisitAt" type="datetime-local" {...register('siteVisitAt')} />
+                    <DeadlineHint value={siteVisitValue} />
                   </div>
                 </div>
                 <Controller
@@ -698,7 +751,13 @@ export function TenderDialog({
                       max={100}
                       {...register('technicalWeight', { setValueAs: emptyToNumber })}
                     />
-                    <FieldError message={errors.technicalWeight?.message} />
+                    {criteriaTotal > 0 && criteriaTotal !== 100 ? (
+                      <p className="text-xs font-medium text-amber-600 dark:text-amber-400">
+                        Total critères : {criteriaTotal} % (attendu 100 %)
+                      </p>
+                    ) : (
+                      <FieldError message={errors.technicalWeight?.message} />
+                    )}
                   </div>
                   <div className="space-y-1.5">
                     <Label>Responsable du dossier</Label>

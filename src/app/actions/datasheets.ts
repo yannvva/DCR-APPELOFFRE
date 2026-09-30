@@ -411,7 +411,12 @@ export async function findMissingDocUrls(
   // normatives (DTU, NF EN, guides CSTB…) : beaucoup sont librement
   // accessibles (guides éditeurs, miroirs officiels, Legifrance) et l'agent
   // sait les trouver. Le compteur `prescriptive` n'est qu'informatif.
-  const searchable = (d: ChapterResult['documents'][number]) => !d.url
+  // Sans URL ET sans PDF livré : une ligne réutilisée depuis la
+  // bibliothèque produits (document_id posé, URL vide) n'a pas besoin
+  // d'une passe de recherche — c'est un appel agent gaspillé qui
+  // risquerait d'écraser statut/filename.
+  const searchable = (d: ChapterResult['documents'][number]) =>
+    !d.url && !d.downloaded && !d.document_id
   // État de santé de la recherche remis à zéro : permet de distinguer
   // « aucun document n'existe » de « les moteurs sont bloqués » en fin de passe.
   resetSearchHealth()
@@ -684,7 +689,10 @@ export async function downloadRunPdfs(
     const chapter: ChapterResult = { ...EMPTY_CHAPTER_RESULT, ...res }
     result[code] = chapter
     for (const doc of chapter.documents) {
-      if (!doc.url || doc.filename === '—' || doc.downloaded) continue
+      // La bibliothèque est interrogée pour TOUT doc non livré, y compris
+      // sans URL : un produit déjà téléchargé sur un autre AO est réutilisé
+      // même si la recherche n'a rien trouvé pour cette ligne.
+      if (doc.downloaded || doc.document_id) continue
       pending.push(doc)
     }
   }
@@ -698,26 +706,37 @@ export async function downloadRunPdfs(
       d.reference && d.reference !== '—' ? d.reference : d.designation,
       d.type_document,
     )
-  const knownDocs = new Map<string, string>()
+  const knownDocs = new Map<string, { id: string; name: string | null }>()
   const keys = [...new Set(pending.map(dedupKeyOf))]
   if (keys.length) {
     const { data: lib } = await ctx.supabase
       .from('datasheet_library')
-      .select('dedup_key, document_id')
+      .select('dedup_key, document_id, document:documents(name)')
       .eq('organization_id', ctx.org.id)
       .in('dedup_key', keys)
-    for (const r of lib ?? []) if (r.document_id) knownDocs.set(r.dedup_key, r.document_id)
+    for (const r of lib ?? []) {
+      if (r.document_id) {
+        const ref = r.document as unknown as { name?: string } | null
+        knownDocs.set(r.dedup_key, { id: r.document_id, name: ref?.name ?? null })
+      }
+    }
   }
   let reused = 0
   const toFetch: ChapterResult['documents'][number][] = []
-  const reuse: { doc: ChapterResult['documents'][number]; id: string }[] = []
+  const reuse: {
+    doc: ChapterResult['documents'][number]
+    id: string
+    name: string | null
+  }[] = []
   for (const doc of pending) {
-    const existingId = knownDocs.get(dedupKeyOf(doc))
-    if (!existingId) {
-      toFetch.push(doc)
+    const existing = knownDocs.get(dedupKeyOf(doc))
+    if (!existing) {
+      // Le téléchargement direct reste conditionné à une URL exploitable ;
+      // les lignes sans URL restent en attente de findMissingDocUrls.
+      if (doc.url && doc.filename !== '—') toFetch.push(doc)
       continue
     }
-    reuse.push({ doc, id: existingId })
+    reuse.push({ doc, id: existing.id, name: existing.name })
   }
   if (reuse.length) {
     // Toutes les liaisons « réutilisées » en UN upsert — avant : un
@@ -740,10 +759,23 @@ export async function downloadRunPdfs(
     const { error: reuseErr } = await ctx.supabase
       .from('document_links')
       .upsert(reuseLinks, { onConflict: 'document_id,entity_type,entity_id' })
-    for (const { doc, id } of reuse) {
+    // Noms déjà pris dans le run : une ligne « — » renommée avec le nom
+    // bibliothèque ne doit pas créer de doublon (clé du rapport/ZIP).
+    const usedNames = new Set(
+      Object.values(result).flatMap((r) => r.documents.map((d) => d.filename)),
+    )
+    for (const { doc, id, name } of reuse) {
       doc.downloaded = true
       doc.document_id = id
-      report[doc.filename] = {
+      // Ligne « — » : la fiche bibliothèque donne un vrai nom de fichier,
+      // sauf s'il est déjà porté par une autre ligne (même produit cité
+      // deux fois) — on garde « — » plutôt qu'un doublon de nom.
+      if (doc.filename === '—' && name && !usedNames.has(name)) {
+        doc.filename = name
+      }
+      usedNames.add(doc.filename)
+      const key = doc.filename !== '—' ? doc.filename : dedupKeyOf(doc).slice(0, 120)
+      report[key] = {
         ok: true,
         document_id: id,
         reason: reuseErr
@@ -939,19 +971,33 @@ export async function downloadRunPdfs(
   const mergedResult: Record<string, ChapterResult> = { ...(fresh?.result ?? {}) }
   for (const [code, res] of Object.entries(result)) {
     const base = mergedResult[code] ?? res
-    const ours = new Map(
-      res.documents.map((d) => [d.url || d.filename, d] as const),
-    )
+    // La clé « url || filename » est ambiguë : plusieurs lignes sans URL
+    // partagent le nom « — » dans un chapitre, et une réutilisation
+    // bibliothèque peut renommer la ligne. File FIFO par clé, puis repli
+    // sur la clé produit (marque|référence|type).
+    const oursByKey = new Map<string, ChapterResult['documents']>()
+    const oursByDedup = new Map<string, ChapterResult['documents']>()
+    for (const d of res.documents) {
+      const k = d.url || d.filename
+      oursByKey.set(k, [...(oursByKey.get(k) ?? []), d])
+      const dk = dedupKeyOf(d)
+      oursByDedup.set(dk, [...(oursByDedup.get(dk) ?? []), d])
+    }
     mergedResult[code] = {
       ...base,
       documents: base.documents.map((fd) => {
-        const mine = ours.get(fd.url || fd.filename)
+        const mine =
+          oursByKey.get(fd.url || fd.filename)?.shift() ??
+          oursByDedup.get(dedupKeyOf(fd))?.shift()
         if (!mine) return fd
         return {
           ...fd,
           downloaded: mine.downloaded,
           download_error: mine.download_error,
           document_id: mine.document_id ?? fd.document_id,
+          // La ligne réutilisée peut avoir récupéré son vrai nom depuis
+          // la bibliothèque (« — » → nom du fichier existant).
+          filename: mine.filename !== '—' ? mine.filename : fd.filename,
         }
       }),
     }

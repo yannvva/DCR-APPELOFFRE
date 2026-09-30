@@ -287,7 +287,11 @@ export function ImportantCard({
                       <SelectContent>
                         <SelectItem value="">Tous les lots</SelectItem>
                         {lots.map((l) => (
-                          <SelectItem key={l.number} value={String(l.number)}>
+                          <SelectItem
+                            key={l.number}
+                            value={String(l.number)}
+                            label={`Lot ${l.number} — ${l.title}`}
+                          >
                             Lot {l.number} — {l.title}
                           </SelectItem>
                         ))}

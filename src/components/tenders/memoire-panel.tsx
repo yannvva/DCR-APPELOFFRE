@@ -377,7 +377,11 @@ export function MemoirePanel({
             </SelectTrigger>
             <SelectContent>
               {runs.map((r) => (
-                <SelectItem key={r.id} value={r.id}>
+                <SelectItem
+                  key={r.id}
+                  value={r.id}
+                  label={`${r.lot_label} — ${formatDate(r.created_at)}`}
+                >
                   {r.lot_label} — {formatDate(r.created_at)}
                 </SelectItem>
               ))}
@@ -411,7 +415,11 @@ export function MemoirePanel({
                     </SelectTrigger>
                     <SelectContent>
                       {lotOptions.map((l) => (
-                        <SelectItem key={l.value} value={l.value}>
+                        <SelectItem
+                          key={l.value}
+                          value={l.value}
+                          label={`Lot ${l.number} — ${l.title}`}
+                        >
                           Lot {l.number} — {l.title}
                         </SelectItem>
                       ))}
@@ -479,7 +487,11 @@ export function MemoirePanel({
                       </SelectTrigger>
                       <SelectContent>
                         {lotOptions.map((l) => (
-                          <SelectItem key={l.value} value={l.value}>
+                          <SelectItem
+                            key={l.value}
+                            value={l.value}
+                            label={`Lot ${l.number} — ${l.title}`}
+                          >
                             Lot {l.number} — {l.title}
                           </SelectItem>
                         ))}

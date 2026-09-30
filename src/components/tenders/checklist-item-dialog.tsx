@@ -24,6 +24,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
+import { DocumentPicker } from '@/components/documents/document-picker'
 import {
   attachItemDocument,
   setChecklistItemStatus,
@@ -293,28 +294,20 @@ export function ChecklistItemDialog({
                   <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
                     Ou attacher un document existant…
                   </summary>
-                  <Select
-                    value={item.document_id ?? ''}
-                    onValueChange={(v) =>
+                  <DocumentPicker
+                    className="mt-1.5 w-full"
+                    documents={documents}
+                    value={item.document_id}
+                    currentLabel={item.document?.name}
+                    placeholder="Choisir un document…"
+                    disabled={pending}
+                    onSelect={(docId) =>
                       startTransition(async () => {
-                        const res = await attachItemDocument(orgSlug, item.id, tenderId, v || null)
+                        const res = await attachItemDocument(orgSlug, item.id, tenderId, docId)
                         if (res?.error) toast.error(res.error)
                       })
                     }
-                    disabled={pending}
-                  >
-                    <SelectTrigger className="mt-1.5 h-8 text-xs">
-                      <SelectValue placeholder="Choisir un document…" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="">— Aucune pièce —</SelectItem>
-                      {documents.map((d) => (
-                        <SelectItem key={d.id} value={d.id}>
-                          {d.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  />
                 </details>
               )}
             </>
@@ -521,7 +514,7 @@ export function ChecklistItemDialog({
                 </SelectTrigger>
                 <SelectContent>
                   {CATEGORY_ORDER.map((c) => (
-                    <SelectItem key={c} value={c}>
+                    <SelectItem key={c} value={c} label={CHECKLIST_CATEGORY_LABELS[c]}>
                       {CHECKLIST_CATEGORY_LABELS[c]}
                     </SelectItem>
                   ))}
@@ -540,7 +533,7 @@ export function ChecklistItemDialog({
                 </SelectTrigger>
                 <SelectContent>
                   {(Object.keys(REQUIREMENT_LABELS) as ChecklistRequirement[]).map((r) => (
-                    <SelectItem key={r} value={r}>
+                    <SelectItem key={r} value={r} label={REQUIREMENT_LABELS[r]}>
                       {REQUIREMENT_LABELS[r]}
                     </SelectItem>
                   ))}
@@ -561,7 +554,7 @@ export function ChecklistItemDialog({
                 </SelectTrigger>
                 <SelectContent>
                   {(Object.keys(RISK_LABELS) as (keyof typeof RISK_LABELS)[]).map((r) => (
-                    <SelectItem key={r} value={r}>
+                    <SelectItem key={r} value={r} label={RISK_LABELS[r]}>
                       {RISK_LABELS[r]}
                     </SelectItem>
                   ))}

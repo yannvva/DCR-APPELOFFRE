@@ -20,7 +20,9 @@ import {
   ecartsToText,
   groupEcarts,
   groupToObtain,
+  type ToObtainGroup,
 } from '@/lib/datasheets/ecarts'
+import { PaginationBar, usePager } from '@/components/pagination-bar'
 import { cn } from '@/lib/utils'
 import type {
   DatasheetEcart,
@@ -65,6 +67,8 @@ export function EcartsPanel({ ecarts }: { ecarts: DatasheetEcart[] }) {
       return hay.includes(needle)
     })
   }, [groups, criticite, q])
+
+  const pager = usePager(visible, 12)
 
   function toggle(set: Set<string>, key: string, apply: (s: Set<string>) => void) {
     const next = new Set(set)
@@ -187,8 +191,9 @@ export function EcartsPanel({ ecarts }: { ecarts: DatasheetEcart[] }) {
                 Aucun écart ne correspond au filtre.
               </p>
             ) : (
+              <>
               <ul className="space-y-2">
-                {visible.map((g) => {
+                {pager.slice.map((g) => {
                   const isOpen = open.has(g.key)
                   const showVariants = variants.has(g.key)
                   return (
@@ -307,6 +312,15 @@ export function EcartsPanel({ ecarts }: { ecarts: DatasheetEcart[] }) {
                   )
                 })}
               </ul>
+              <PaginationBar
+                className="mt-3"
+                page={pager.page}
+                pageCount={pager.pageCount}
+                onPage={pager.setPage}
+                total={visible.length}
+                pageSize={pager.pageSize}
+              />
+              </>
             )}
           </>
         )}
@@ -336,11 +350,65 @@ export function AObtenirPanel({ items }: { items: DatasheetToObtain[] }) {
   const moe = visible.filter((g) => g.origine === 'moe')
   const fab = visible.filter((g) => g.origine === 'fabricant')
 
-  const section = (
-    title: string,
-    list: typeof visible,
-    emptyHint: string,
-  ) => (
+  return (
+    <Card>
+      <CardHeader className="gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <CardTitle className="flex flex-wrap items-center gap-2 text-base">
+            <FileWarning className="size-4" /> Documents à obtenir
+            <Badge variant="secondary" className="text-[10px]">
+              {items.length} demandes
+            </Badge>
+            <Badge variant="outline" className="text-[10px]">
+              {groups.length} sujets
+            </Badge>
+          </CardTitle>
+          <div className="relative w-56">
+            <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Filtrer (document, fabricant…)…"
+              className="h-8 w-full rounded-lg border border-input bg-transparent pl-8 pr-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+            />
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {visible.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Aucune demande ne correspond au filtre.</p>
+        ) : (
+          <div className="grid gap-6 xl:grid-cols-2">
+            <ToObtainSection
+              title="À demander aux fabricants / fournisseurs"
+              list={fab}
+              emptyHint="Aucune fiche fabricant à obtenir."
+            />
+            <ToObtainSection
+              title="À demander à la MOE / MOA"
+              list={moe}
+              emptyHint="Aucune clarification ou pièce DCE à demander."
+            />
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+/** Une colonne du panneau — paginée : la liste MOE peut dépasser 30 sujets
+ *  (chaque chapitre signale les mêmes pièces absentes du DCE). */
+function ToObtainSection({
+  title,
+  list,
+  emptyHint,
+}: {
+  title: string
+  list: ToObtainGroup[]
+  emptyHint: string
+}) {
+  const pager = usePager(list, 12)
+  return (
     <section className="min-w-0">
       <h3 className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
         {title}
@@ -351,8 +419,9 @@ export function AObtenirPanel({ items }: { items: DatasheetToObtain[] }) {
       {list.length === 0 ? (
         <p className="text-sm text-muted-foreground">{emptyHint}</p>
       ) : (
+        <>
         <ul className="space-y-2 text-sm">
-          {list.map((g, i) => (
+          {pager.slice.map((g, i) => (
             <li key={i} className="rounded-md border border-border/60 px-3 py-2">
               <div className="flex items-start justify-between gap-2">
                 <p className="min-w-0 font-medium leading-snug">
@@ -398,52 +467,16 @@ export function AObtenirPanel({ items }: { items: DatasheetToObtain[] }) {
             </li>
           ))}
         </ul>
+        <PaginationBar
+          className="mt-3"
+          page={pager.page}
+          pageCount={pager.pageCount}
+          onPage={pager.setPage}
+          total={list.length}
+          pageSize={pager.pageSize}
+        />
+        </>
       )}
     </section>
-  )
-
-  return (
-    <Card>
-      <CardHeader className="gap-3">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <CardTitle className="flex flex-wrap items-center gap-2 text-base">
-            <FileWarning className="size-4" /> Documents à obtenir
-            <Badge variant="secondary" className="text-[10px]">
-              {items.length} demandes
-            </Badge>
-            <Badge variant="outline" className="text-[10px]">
-              {groups.length} sujets
-            </Badge>
-          </CardTitle>
-          <div className="relative w-56">
-            <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-            <input
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Filtrer (document, fabricant…)…"
-              className="h-8 w-full rounded-lg border border-input bg-transparent pl-8 pr-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-            />
-          </div>
-        </div>
-      </CardHeader>
-      <CardContent>
-        {visible.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Aucune demande ne correspond au filtre.</p>
-        ) : (
-          <div className="grid gap-6 xl:grid-cols-2">
-            {section(
-              'À demander aux fabricants / fournisseurs',
-              fab,
-              'Aucune fiche fabricant à obtenir.',
-            )}
-            {section(
-              'À demander à la MOE / MOA',
-              moe,
-              'Aucune clarification ou pièce DCE à demander.',
-            )}
-          </div>
-        )}
-      </CardContent>
-    </Card>
   )
 }
