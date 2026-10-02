@@ -24,6 +24,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Menu,
+  HeartPulse,
 } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import {
@@ -51,6 +52,7 @@ import {
 } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { logout } from '@/app/actions/auth'
+import { NotificationBell } from '@/components/layout/notification-bell'
 import type { MembershipRole, Organization } from '@/lib/types'
 
 type OrgWithRole = Organization & { memberRole: MembershipRole }
@@ -64,6 +66,7 @@ const NAV_GROUPS = [
     items: [
       { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
       { key: 'todo', label: 'À faire', icon: ListTodo },
+      { key: 'sante', label: 'Santé', icon: HeartPulse },
     ],
   },
   {
@@ -197,6 +200,11 @@ function SidebarContent({
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+        {!collapsed && (
+          <div className="text-sidebar-foreground">
+            <NotificationBell orgSlug={org.slug} />
+          </div>
+        )}
         {onToggleCollapsed && (
           <Tip show label={collapsed ? 'Ouvrir le menu' : 'Réduire le menu'}>
             <button
@@ -410,6 +418,7 @@ export function AppSidebar({
           </Avatar>
           <span className="truncate text-sm font-medium">{org.name}</span>
         </Link>
+        <NotificationBell orgSlug={org.slug} />
         <button
           type="button"
           aria-label="Rechercher"

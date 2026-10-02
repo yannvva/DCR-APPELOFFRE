@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
+  Activity,
   Building2,
   Contact,
   FileText,
@@ -48,6 +49,7 @@ const TYPE_META: Record<SearchResult['type'], { icon: typeof FileText; path: (or
 const NAV = [
   { label: 'Dashboard', icon: LayoutDashboard, path: 'dashboard' },
   { label: 'À faire', icon: ListTodo, path: 'todo' },
+  { label: 'Santé', icon: Activity, path: 'sante' },
   { label: 'Appels d’offres', icon: FileSignature, path: 'tenders' },
   { label: 'Opportunités', icon: CircleDot, path: 'crm/opportunities' },
   { label: 'Entreprises', icon: Building2, path: 'crm/accounts' },
