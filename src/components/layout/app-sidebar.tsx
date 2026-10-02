@@ -43,23 +43,52 @@ import {
 } from '@/components/ui/sheet'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Separator } from '@/components/ui/separator'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { logout } from '@/app/actions/auth'
 import type { MembershipRole, Organization } from '@/lib/types'
 
 type OrgWithRole = Organization & { memberRole: MembershipRole }
 
-const NAV_ITEMS = [
-  { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { key: 'todo', label: 'À faire', icon: ListTodo },
-  { key: 'tenders', label: 'Appels d’offres', icon: FileSignature },
-  { key: 'crm', label: 'CRM', icon: Users },
-  { key: 'projects', label: 'Projets', icon: FolderKanban },
-  { key: 'documents', label: 'Documents', icon: FileText },
-  { key: 'fiches', label: 'Fiches techniques', icon: BookMarked },
-  { key: 'societe', label: 'Société', icon: Building2 },
-  { key: 'members', label: 'Membres', icon: UserCog },
-  { key: 'settings', label: 'Paramètres', icon: Settings },
+// Navigation groupée par fonction — 10 entrées à plat forçaient l'œil à
+// tout rescanner ; les sections raccourcissent le repérage et l'ordre suit
+// le flux de travail (piloter → vendre → documenter → administrer).
+const NAV_GROUPS = [
+  {
+    label: 'Pilotage',
+    items: [
+      { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+      { key: 'todo', label: 'À faire', icon: ListTodo },
+    ],
+  },
+  {
+    label: 'Commercial',
+    items: [
+      { key: 'tenders', label: 'Appels d’offres', icon: FileSignature },
+      { key: 'crm', label: 'CRM', icon: Users },
+      { key: 'projects', label: 'Projets', icon: FolderKanban },
+    ],
+  },
+  {
+    label: 'Documents',
+    items: [
+      { key: 'documents', label: 'Documents', icon: FileText },
+      { key: 'fiches', label: 'Fiches techniques', icon: BookMarked },
+      { key: 'societe', label: 'Société', icon: Building2 },
+    ],
+  },
+  {
+    label: 'Organisation',
+    items: [
+      { key: 'members', label: 'Membres', icon: UserCog },
+      { key: 'settings', label: 'Paramètres', icon: Settings },
+    ],
+  },
 ] as const
 
 const ROLE_LABELS: Record<MembershipRole, string> = {
@@ -71,6 +100,27 @@ const ROLE_LABELS: Record<MembershipRole, string> = {
 
 const SIDEBAR_KEY = 'nexus-sidebar-collapsed'
 const SIDEBAR_EVENT = 'nexus-sidebar-collapsed-change'
+
+/** Tooltip latérale en mode réduit — remplace `title` (délai ~1 s, rendu OS). */
+function Tip({
+  show,
+  label,
+  children,
+}: {
+  show: boolean
+  label: string
+  children: React.ReactElement
+}) {
+  if (!show) return children
+  return (
+    <Tooltip>
+      <TooltipTrigger render={children} />
+      <TooltipContent side="right" sideOffset={8}>
+        {label}
+      </TooltipContent>
+    </Tooltip>
+  )
+}
 
 function subscribeSidebar(cb: () => void) {
   window.addEventListener(SIDEBAR_EVENT, cb)
@@ -106,28 +156,29 @@ function SidebarContent({
   const initials = (user.fullName || user.email).slice(0, 2).toUpperCase()
 
   return (
-    <>
+    <TooltipProvider>
       <div className={cn('flex items-center p-3', collapsed && 'flex-col gap-2')}>
         <DropdownMenu>
-          <DropdownMenuTrigger
-            className={cn(
-              'flex items-center gap-2 rounded-md px-2 py-2 text-left hover:bg-sidebar-accent',
-              collapsed ? 'justify-center' : 'w-full',
-            )}
-            title={collapsed ? org.name : undefined}
-          >
-            <Avatar className="size-6 shrink-0">
-              <AvatarFallback className="text-xs">
-                {org.name.slice(0, 2).toUpperCase()}
-              </AvatarFallback>
-            </Avatar>
-            {!collapsed && (
-              <>
-                <span className="flex-1 truncate text-sm font-medium">{org.name}</span>
-                <ChevronsUpDown className="size-4 text-muted-foreground" />
-              </>
-            )}
-          </DropdownMenuTrigger>
+          <Tip show={collapsed} label={org.name}>
+            <DropdownMenuTrigger
+              className={cn(
+                'flex items-center gap-2 rounded-lg px-2 py-2 text-left transition-colors hover:bg-sidebar-accent',
+                collapsed ? 'justify-center' : 'w-full',
+              )}
+            >
+              <Avatar className="size-6 shrink-0 ring-1 ring-sidebar-border">
+                <AvatarFallback className="text-xs">
+                  {org.name.slice(0, 2).toUpperCase()}
+                </AvatarFallback>
+              </Avatar>
+              {!collapsed && (
+                <>
+                  <span className="flex-1 truncate text-sm font-medium">{org.name}</span>
+                  <ChevronsUpDown className="size-4 text-muted-foreground" />
+                </>
+              )}
+            </DropdownMenuTrigger>
+          </Tip>
           <DropdownMenuContent className="w-56" align="start">
             <DropdownMenuGroup>
               <DropdownMenuLabel>Organisations</DropdownMenuLabel>
@@ -147,81 +198,112 @@ function SidebarContent({
           </DropdownMenuContent>
         </DropdownMenu>
         {onToggleCollapsed && (
-          <button
-            type="button"
-            onClick={onToggleCollapsed}
-            title={collapsed ? 'Ouvrir le menu' : 'Réduire le menu'}
-            aria-label={collapsed ? 'Ouvrir le menu' : 'Réduire le menu'}
-            className="shrink-0 rounded-md p-2 text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-          >
-            {collapsed ? (
-              <PanelLeftOpen className="size-4" />
-            ) : (
-              <PanelLeftClose className="size-4" />
-            )}
-          </button>
+          <Tip show label={collapsed ? 'Ouvrir le menu' : 'Réduire le menu'}>
+            <button
+              type="button"
+              onClick={onToggleCollapsed}
+              aria-label={collapsed ? 'Ouvrir le menu' : 'Réduire le menu'}
+              className="shrink-0 rounded-lg p-2 text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+            >
+              {collapsed ? (
+                <PanelLeftOpen className="size-4" />
+              ) : (
+                <PanelLeftClose className="size-4" />
+              )}
+            </button>
+          </Tip>
         )}
       </div>
 
       <div className="px-3 pb-2">
-        <button
-          className={cn(
-            'flex w-full items-center gap-2 rounded-md border border-sidebar-border px-2 py-1.5 text-sm text-muted-foreground hover:bg-sidebar-accent',
-            collapsed && 'justify-center',
-          )}
-          title={collapsed ? 'Rechercher…' : undefined}
-          onClick={() =>
-            window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true }))
-          }
-        >
-          <Search className="size-4 shrink-0" />
-          {!collapsed && (
-            <>
-              <span className="flex-1 text-left">Rechercher…</span>
-              <kbd className="text-[10px] text-muted-foreground">⌘K</kbd>
-            </>
-          )}
-        </button>
+        <Tip show={collapsed} label="Rechercher (Ctrl K)">
+          <button
+            type="button"
+            className={cn(
+              'flex w-full items-center gap-2 rounded-lg border border-sidebar-border px-2.5 py-1.5 text-[13px] text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
+              collapsed && 'justify-center px-2',
+            )}
+            onClick={() =>
+              window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true }))
+            }
+          >
+            <Search className="size-4 shrink-0" />
+            {!collapsed && (
+              <>
+                <span className="flex-1 text-left">Rechercher…</span>
+                <kbd className="rounded border border-sidebar-border bg-sidebar px-1 py-px font-sans text-[10px] text-muted-foreground">
+                  Ctrl K
+                </kbd>
+              </>
+            )}
+          </button>
+        </Tip>
       </div>
 
-      <nav className="flex-1 space-y-1 px-3">
-        {NAV_ITEMS.map(({ key, label, icon: Icon }) => {
-          const href = `/${org.slug}/${key}`
-          const active = pathname.startsWith(href)
-          return (
-            <Link
-              key={key}
-              href={href}
-              title={collapsed ? label : undefined}
-              onClick={onNavigate}
-              className={cn(
-                'flex items-center gap-2 rounded-md px-2 py-1.5 text-sm',
-                collapsed && 'justify-center',
-                active
-                  ? 'bg-sidebar-accent font-medium text-sidebar-accent-foreground'
-                  : 'text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
-              )}
-            >
-              <Icon className="size-4 shrink-0" />
-              {!collapsed && label}
-            </Link>
-          )
-        })}
+      <nav className="flex-1 space-y-5 overflow-y-auto px-3 py-1">
+        {NAV_GROUPS.map((group, gi) => (
+          <div key={group.label}>
+            {collapsed ? (
+              // Réduit : les libellés disparaissent, un séparateur discret
+              // garde le découpage en groupes.
+              gi > 0 && <Separator className="mx-1 mb-2 opacity-40" />
+            ) : (
+              <p className="mb-1 px-2 text-[10px] font-medium tracking-widest text-muted-foreground/60 uppercase">
+                {group.label}
+              </p>
+            )}
+            <div className="space-y-0.5">
+              {group.items.map(({ key, label, icon: Icon }) => {
+                const href = `/${org.slug}/${key}`
+                const active = pathname.startsWith(href)
+                return (
+                  <Tip key={key} show={collapsed} label={label}>
+                    <Link
+                      href={href}
+                      onClick={onNavigate}
+                      aria-current={active ? 'page' : undefined}
+                      className={cn(
+                        'relative flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] transition-colors',
+                        active
+                          ? 'bg-sidebar-accent font-medium text-sidebar-accent-foreground'
+                          : 'text-muted-foreground hover:bg-sidebar-accent/70 hover:text-sidebar-accent-foreground',
+                        collapsed && 'justify-center px-2',
+                      )}
+                    >
+                      {/* Barre d'accent — repère de section active plus lisible
+                          qu'un simple changement de fond. */}
+                      {active && (
+                        <span
+                          aria-hidden
+                          className="absolute top-1/2 left-0 h-4 w-0.5 -translate-y-1/2 rounded-full bg-primary"
+                        />
+                      )}
+                      <Icon
+                        className={cn('size-4 shrink-0', active && 'text-primary')}
+                      />
+                      {!collapsed && label}
+                    </Link>
+                  </Tip>
+                )
+              })}
+            </div>
+          </div>
+        ))}
       </nav>
 
       <div className="p-3">
         <Separator className="mb-3" />
         <DropdownMenu>
-          <DropdownMenuTrigger
-            className={cn(
-              'flex items-center gap-2 rounded-md px-2 py-2 text-left hover:bg-sidebar-accent',
-              collapsed ? 'justify-center' : 'w-full',
-            )}
-            title={collapsed ? (user.fullName || user.email) : undefined}
-          >
-            <Avatar className="size-6 shrink-0">
-              <AvatarFallback className="text-xs">{initials}</AvatarFallback>
-            </Avatar>
+          <Tip show={collapsed} label={user.fullName || user.email}>
+            <DropdownMenuTrigger
+              className={cn(
+                'flex items-center gap-2 rounded-lg px-2 py-2 text-left transition-colors hover:bg-sidebar-accent',
+                collapsed ? 'justify-center' : 'w-full',
+              )}
+            >
+              <Avatar className="size-6 shrink-0 ring-1 ring-sidebar-border">
+                <AvatarFallback className="text-xs">{initials}</AvatarFallback>
+              </Avatar>
             {!collapsed && (
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium">
@@ -232,7 +314,8 @@ function SidebarContent({
                 </p>
               </div>
             )}
-          </DropdownMenuTrigger>
+            </DropdownMenuTrigger>
+          </Tip>
           <DropdownMenuContent className="w-56" align="start">
             <DropdownMenuGroup>
               <DropdownMenuLabel className="truncate">{user.email}</DropdownMenuLabel>
@@ -258,7 +341,7 @@ function SidebarContent({
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
-    </>
+    </TooltipProvider>
   )
 }
 

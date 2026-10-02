@@ -4,6 +4,7 @@ import {
   Building2,
   BookMarked,
   ChevronRight,
+  FolderOpen,
   ScrollText,
   Settings,
   UserCog,
@@ -24,7 +25,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { OrgNameForm, ProfileForm } from '@/components/settings/settings-forms'
-import type { JobRole } from '@/lib/types'
+import type { AuditLog, JobRole } from '@/lib/types'
 
 const ROLE_LABELS: Record<string, string> = {
   owner: 'Propriétaire',
@@ -69,6 +70,8 @@ const AUDIT_LABELS: Record<string, string> = {
   'datasheet_run.deleted': 'Recherche de fiches supprimée',
   'memoire_run.created': 'Mémoire technique lancé',
   'memoire_run.generated': 'Mémoire technique généré',
+  'memoire_run.built': 'DOCX de mémoire construit',
+  'memoire_run.built_full': 'Mémoire complet construit',
   'memoire_run.docx_imported': 'DOCX de mémoire importé',
   'memoire_run.deleted': 'Mémoire technique supprimé',
   'dc.generated': 'DC1/DC2 généré',
@@ -82,6 +85,50 @@ const AUDIT_LABELS: Record<string, string> = {
   'project.created': 'Projet créé',
   'project.deleted': 'Projet supprimé',
   'opportunity.converted_to_project': 'Opportunité convertie en projet',
+}
+
+/** Lien vers l'objet concerné par l'action. Pour un AO, l'id nu suffit : la
+    page cible redirige vers l'URL canonique « slug-id ». */
+function auditEntityHref(orgSlug: string, log: AuditLog): string | null {
+  const m = log.metadata ?? {}
+  const tenderId =
+    log.entity_type === 'tender' || log.entity_type === 'tender_checklist_item'
+      ? (typeof m.tender_id === 'string' ? m.tender_id : log.entity_id)
+      : typeof m.tender_id === 'string'
+        ? m.tender_id
+        : null
+  if (tenderId)
+    return `/${orgSlug}/tenders/${tenderId}${log.entity_type === 'tender_checklist_item' ? '?tab=checklist' : ''}`
+  switch (log.entity_type) {
+    case 'project':
+      return `/${orgSlug}/projects/${log.entity_id}`
+    case 'account':
+      return `/${orgSlug}/crm/accounts/${log.entity_id}`
+    case 'contact':
+      return `/${orgSlug}/crm/contacts/${log.entity_id}`
+    case 'document':
+      return `/${orgSlug}/documents`
+    default:
+      return null
+  }
+}
+
+/** Détail lisible extrait des métadonnées : nom de pièce, lot, compteurs. */
+function auditDetail(log: AuditLog): string | null {
+  const m = log.metadata ?? {}
+  const parts: string[] = []
+  const name = m.name ?? m.title
+  if (typeof name === 'string' && name) parts.push(name)
+  if (typeof m.lot_label === 'string' && m.lot_label) parts.push(m.lot_label)
+  if (typeof m.ok === 'number' && typeof m.failed === 'number')
+    parts.push(m.failed ? `${m.ok} ok · ${m.failed} échec(s)` : `${m.ok} fichier(s)`)
+  else if (typeof m.files === 'number') parts.push(`${m.files} fichier(s)`)
+  if (Array.isArray(m.placeholders) && m.placeholders.length)
+    parts.push(`${m.placeholders.length} champ(s) vide(s)`)
+  if (typeof m.force_reason === 'string' && m.force_reason)
+    parts.push(`« ${m.force_reason} »`)
+  else if (typeof m.reason === 'string' && m.reason) parts.push(`« ${m.reason} »`)
+  return parts.length ? parts.join(' — ') : null
 }
 
 const QUICK_LINKS = [
@@ -102,6 +149,12 @@ const QUICK_LINKS = [
     label: 'Fiches techniques',
     icon: BookMarked,
     desc: 'Bibliothèque de fiches réutilisables par les agents',
+  },
+  {
+    key: 'documents',
+    label: 'Documents',
+    icon: FolderOpen,
+    desc: 'Fichiers de l’organisation — société et dossiers AO',
   },
 ] as const
 
@@ -160,7 +213,9 @@ export default async function SettingsPage({
                 <p className="truncate text-sm font-medium">
                   {profile?.full_name || user.email}
                 </p>
-                <p className="truncate text-xs text-muted-foreground">{user.email}</p>
+                {profile?.full_name && (
+                  <p className="truncate text-xs text-muted-foreground">{user.email}</p>
+                )}
               </div>
               <Badge variant="secondary" className="ml-auto shrink-0">
                 {ROLE_LABELS[role]}
@@ -224,7 +279,7 @@ export default async function SettingsPage({
         <CardHeader>
           <CardTitle className="text-base">Accès rapides</CardTitle>
         </CardHeader>
-        <CardContent className="grid gap-3 sm:grid-cols-3">
+        <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {QUICK_LINKS.map(({ key, label, icon: Icon, desc }) => (
             <Link
               key={key}
@@ -272,27 +327,40 @@ export default async function SettingsPage({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {auditLogs.map((log) => (
-                    <TableRow key={log.id}>
-                      <TableCell className="text-sm">
-                        {AUDIT_LABELS[log.action] ?? (
-                          <code className="text-xs">{log.action}</code>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
-                        {log.actor?.full_name ?? 'Système'}
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
-                        {log.entity_type ?? '—'}
-                      </TableCell>
-                      <TableCell
-                        className="text-right text-sm text-muted-foreground"
-                        title={formatDate(log.created_at)}
-                      >
-                        {formatRelative(log.created_at)}
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                  {auditLogs.map((log) => {
+                    const href = auditEntityHref(orgSlug, log)
+                    const detail = auditDetail(log)
+                    return (
+                      <TableRow key={log.id}>
+                        <TableCell className="text-sm">
+                          {AUDIT_LABELS[log.action] ?? (
+                            <code className="text-xs">{log.action}</code>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {log.actor?.full_name ?? 'Système'}
+                        </TableCell>
+                        <TableCell className="min-w-0 text-sm text-muted-foreground">
+                          {href ? (
+                            <Link
+                              href={href}
+                              className="hover:text-foreground hover:underline"
+                            >
+                              {detail ?? (log.entity_type ?? '—')}
+                            </Link>
+                          ) : (
+                            <span className="truncate">{detail ?? (log.entity_type ?? '—')}</span>
+                          )}
+                        </TableCell>
+                        <TableCell
+                          className="text-right text-sm text-muted-foreground"
+                          title={formatDate(log.created_at)}
+                        >
+                          {formatRelative(log.created_at)}
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
                 </TableBody>
               </Table>
             )}
