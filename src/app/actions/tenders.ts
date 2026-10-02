@@ -661,7 +661,11 @@ export async function setChecklistItemStatus(
       .single()
     const doc = Array.isArray(item?.document) ? item.document[0] : item?.document
     if (item?.requires_signature && !doc?.is_signed) {
-      return { error: 'Impossible de valider : la pièce doit être signée. Cochez « Forcer la validation » pour passer outre.' }
+      return {
+        error:
+          'Impossible de valider : la pièce exige une signature. Marquez-la ' +
+          '« signée » (bouton sur la pièce) ou cochez « Forcer la validation ».',
+      }
     }
   }
 

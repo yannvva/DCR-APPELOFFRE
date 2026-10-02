@@ -42,7 +42,7 @@ export default async function OpportunitiesPage({
 
   if (!pipelineData) {
     return (
-      <div className="p-6">
+      <div className="p-4 sm:p-6">
         <p className="text-muted-foreground">Aucun pipeline configuré pour cette organisation.</p>
       </div>
     )
@@ -52,7 +52,7 @@ export default async function OpportunitiesPage({
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center justify-between px-6 pt-5">
+      <div className="flex flex-wrap items-center justify-between gap-3 px-6 pt-5">
         <div>
           <h1 className="text-2xl font-semibold">Opportunités</h1>
           <p className="text-sm text-muted-foreground">{pipelineData.pipeline.name}</p>
@@ -65,6 +65,7 @@ export default async function OpportunitiesPage({
             contacts={contacts.rows.map((c) => ({
               id: c.id,
               name: [c.first_name, c.last_name].filter(Boolean).join(' '),
+              accountId: c.account_id,
             }))}
             defaultOpen={isNew === '1'}
           />
@@ -81,6 +82,12 @@ export default async function OpportunitiesPage({
         orgSlug={orgSlug}
         stages={pipelineData.stages}
         opportunities={opportunities}
+        accounts={accounts}
+        contacts={contacts.rows.map((c) => ({
+          id: c.id,
+          name: [c.first_name, c.last_name].filter(Boolean).join(' '),
+          accountId: c.account_id,
+        }))}
         canEdit={canEdit}
       />
     </div>

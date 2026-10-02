@@ -123,7 +123,10 @@ export default async function TodoPage({
       value: hotDeadlines.length,
       icon: CalendarClock,
       tone: hotDeadlines.length ? 'text-amber-500' : 'text-muted-foreground',
-      href: `/${orgSlug}/todo?echeance=week`,
+      // Compteur = dossiers (deadline AO) → le preset due_soon de /tenders
+      // couvre les échus ET les ≤ 7 j, contrairement au filtre « 7 jours »
+      // du board qui porte sur les pièces et exclut les dates passées.
+      href: `/${orgSlug}/tenders?preset=due_soon`,
       hint: 'Date de remise proche',
     },
     {
@@ -136,7 +139,7 @@ export default async function TodoPage({
   ]
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-6 p-4 sm:p-6">
       <div>
         <h1 className="text-2xl font-semibold">À faire</h1>
         <p className="text-sm text-muted-foreground">

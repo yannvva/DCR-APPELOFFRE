@@ -51,12 +51,17 @@ export async function listDocuments(ctx: Ctx, params: DocumentListParams = {}) {
 
 /** Facettes du dossier courant (types de pièces + extensions présentes) —
  *  alimente les filtres de la page Documents. */
-export async function listDocumentFacets(ctx: Ctx, folder: string) {
+export async function listDocumentFacets(ctx: Ctx, folder: string, subtree = false) {
   let q = ctx.supabase
     .from('documents')
     .select('name, document_type')
     .eq('organization_id', ctx.org.id)
-  if (folder !== '/') q = q.eq('folder_path', folder)
+  if (folder !== '/' && subtree) {
+    const f = folder.replaceAll('"', '')
+    q = q.or(`folder_path.eq."${f}",folder_path.like."${f}/%"`)
+  } else if (folder !== '/') {
+    q = q.eq('folder_path', folder)
+  }
   const { data } = await q
   const types = new Set<string>()
   const exts = new Set<string>()

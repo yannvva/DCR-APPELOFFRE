@@ -107,7 +107,7 @@ export function ProjectDialog({
             <Label htmlFor="description">Description</Label>
             <Textarea id="description" rows={3} {...register('description')} />
           </div>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid gap-3 sm:grid-cols-3">
             <div className="space-y-1.5">
               <Label>Client</Label>
               <Select value={accountId} onValueChange={(v) => setAccountId(v ?? '')}>

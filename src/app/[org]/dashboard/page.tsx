@@ -225,33 +225,33 @@ export default async function DashboardPage({
       label: 'AO en cours',
       value: openTenders.count ?? 0,
       icon: FileSignature,
-      href: `/${orgSlug}/tenders`,
+      href: `/${orgSlug}/tenders?preset=open`,
     },
     {
       label: 'Montant AO en cours',
       value: formatEurosCompact(openAmount),
       icon: Euro,
-      href: `/${orgSlug}/tenders`,
+      href: `/${orgSlug}/tenders?preset=open`,
     },
     {
       label: 'Deadlines ≤ 7 j',
       value: deadlines7d.count ?? 0,
       icon: AlarmClock,
-      href: `/${orgSlug}/tenders`,
+      href: `/${orgSlug}/tenders?preset=due_soon`,
       tone: (deadlines7d.count ?? 0) > 0 ? ('danger' as const) : undefined,
     },
     {
       label: 'Pièces obligatoires à produire',
       value: missingMandatory.count ?? 0,
       icon: ListChecks,
-      href: `/${orgSlug}/todo`,
+      href: `/${orgSlug}/todo?source=pieces`,
       tone: (missingMandatory.count ?? 0) > 0 ? ('danger' as const) : undefined,
     },
     {
       label: 'Visites à justifier',
       value: visitsToJustify.count ?? 0,
       icon: MapPin,
-      href: `/${orgSlug}/tenders`,
+      href: `/${orgSlug}/tenders?preset=visit`,
       tone: (visitsToJustify.count ?? 0) > 0 ? ('warn' as const) : undefined,
     },
     {
@@ -265,7 +265,7 @@ export default async function DashboardPage({
       label: 'Tâches en retard',
       value: overdueCount.count ?? 0,
       icon: CheckSquare,
-      href: `/${orgSlug}/todo`,
+      href: `/${orgSlug}/todo?echeance=late`,
       tone: (overdueCount.count ?? 0) > 0 ? ('danger' as const) : undefined,
     },
     {
@@ -283,7 +283,7 @@ export default async function DashboardPage({
   })
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-6 p-4 sm:p-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold">Tableau de bord</h1>
@@ -444,7 +444,7 @@ export default async function DashboardPage({
                 Deadlines AO
               </CardTitle>
               <Link
-                href={`/${orgSlug}/tenders`}
+                href={`/${orgSlug}/tenders?preset=due_soon`}
                 className="text-xs text-muted-foreground hover:text-foreground"
               >
                 Tout voir →
@@ -557,7 +557,7 @@ export default async function DashboardPage({
                 Visites de site à venir
               </CardTitle>
               <Link
-                href={`/${orgSlug}/tenders`}
+                href={`/${orgSlug}/tenders?preset=visit`}
                 className="text-xs text-muted-foreground hover:text-foreground"
               >
                 Tout voir →

@@ -267,41 +267,47 @@ export async function completeResearchJson<T>(opts: {
         })
         continue
       }
-      for (const call of msg.tool_calls) {
-        // Quotas souples : au-delà, l'outil répond qu'il est épuisé
-        if (call.function.name === 'web_search' && counts.search >= maxSearches) {
-          messages.push({
-            role: 'tool',
-            tool_call_id: call.id,
-            content: 'Quota de recherches atteint — rédige le JSON final avec ce que tu as.',
-          })
-          continue
-        }
-        if (call.function.name === 'web_fetch' && counts.fetch >= maxFetches) {
-          messages.push({
-            role: 'tool',
-            tool_call_id: call.id,
-            content: 'Quota de lectures atteint — rédige le JSON final avec ce que tu as.',
-          })
-          continue
-        }
+      // Attribution des quotas EN PREMIER (séquentiel), exécution des outils
+      // EN PARALLÈLE ensuite : le modèle émet souvent 2-4 tool_calls
+      // indépendants par tour — en série, chaque recherche attendait la
+      // précédente. Les réponses sont repoussées dans l'ordre des appels.
+      const plan = msg.tool_calls.map((call) => {
+        if (call.function.name === 'web_search' && counts.search >= maxSearches)
+          return { call, quota: 'recherches' }
+        if (call.function.name === 'web_fetch' && counts.fetch >= maxFetches)
+          return { call, quota: 'lectures' }
         if (call.function.name === 'web_search') counts.search++
         if (call.function.name === 'web_fetch') counts.fetch++
-        const content = await runTool(call.function.name, call.function.arguments)
-        if (call.function.name === 'web_search') {
+        return { call, quota: null as string | null }
+      })
+      const contents = await Promise.all(
+        plan.map((p) =>
+          p.quota ? Promise.resolve(null) : runTool(p.call.function.name, p.call.function.arguments),
+        ),
+      )
+      for (let j = 0; j < plan.length; j++) {
+        const { call, quota } = plan[j]
+        const content =
+          quota != null
+            ? `Quota de ${quota} atteint — rédige le JSON final avec ce que tu as.`
+            : (contents[j] ?? 'Erreur : outil sans réponse.')
+        // CHAQUE tool_call DOIT recevoir sa réponse « tool » — avant, la
+        // sortie « recherche indisponible » sautait ce push et l'appel
+        // suivant envoyait un tool_call sans réponse (HTTP 400, run perdu).
+        messages.push({ role: 'tool', tool_call_id: call.id, content })
+        if (call.function.name === 'web_search' && quota == null) {
           deadSearchStreak = /aucun résultat|too many requests|indisponible/i.test(
             content,
           )
             ? deadSearchStreak + 1
             : 0
-          if (deadSearchStreak >= 4) {
+          if (deadSearchStreak >= 4 && !searchUnavailable) {
             searchUnavailable = true
             messages.push({
               role: 'user',
               content:
                 'La recherche web est indisponible (moteurs limités ou bloqués). N’insiste plus : rédige MAINTENANT le JSON final à partir des exigences du CCTP, avec le statut « à obtenir » pour les documents non vérifiables. N’invente aucune marque ni URL.',
             })
-            continue
           }
         }
         if (process.env.AGENT_TRACE) {
@@ -309,7 +315,6 @@ export async function completeResearchJson<T>(opts: {
             `[trace ${call.function.name}] ${String(call.function.arguments).slice(0, 160)} → ${content.slice(0, 160).replace(/\n/g, ' ')}`,
           )
         }
-        messages.push({ role: 'tool', tool_call_id: call.id, content })
       }
       continue
     }

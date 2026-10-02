@@ -38,6 +38,8 @@ export async function generateDcForms(
 ): Promise<{
   success?: boolean
   error?: string
+  /** Nombre de fichiers produits (DC1 + un DC2 par lot). */
+  generated?: number
   /** Placeholders {{…}} restés vides dans les gabarits générés. */
   warnings?: string[]
 }> {
@@ -230,5 +232,9 @@ export async function generateDcForms(
     })
   }
   revalidateTenderPages(orgSlug)
-  return { success: true, warnings: unfilled.size ? [...unfilled] : undefined }
+  return {
+    success: true,
+    generated: toUpload.length,
+    warnings: unfilled.size ? [...unfilled] : undefined,
+  }
 }

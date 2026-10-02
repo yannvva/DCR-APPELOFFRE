@@ -97,6 +97,9 @@ export function AccountDialog({
             <div className="space-y-1.5">
               <Label htmlFor="domain">Domaine</Label>
               <Input id="domain" placeholder="acme.fr" {...register('domain')} />
+              {errors.domain && (
+                <p className="text-xs text-destructive">{errors.domain.message}</p>
+              )}
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="industry">Secteur</Label>
@@ -106,16 +109,25 @@ export function AccountDialog({
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label htmlFor="website">Site web</Label>
-              <Input id="website" placeholder="https://…" {...register('website')} />
+              <Input id="website" type="url" placeholder="https://…" {...register('website')} />
+              {errors.website && (
+                <p className="text-xs text-destructive">{errors.website.message}</p>
+              )}
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="phone">Téléphone</Label>
-              <Input id="phone" {...register('phone')} />
+              <Input id="phone" type="tel" {...register('phone')} />
+              {errors.phone && (
+                <p className="text-xs text-destructive">{errors.phone.message}</p>
+              )}
             </div>
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="notes">Notes</Label>
             <Textarea id="notes" rows={3} {...register('notes')} />
+            {errors.notes && (
+              <p className="text-xs text-destructive">{errors.notes.message}</p>
+            )}
           </div>
           <Button type="submit" className="w-full" disabled={isSubmitting}>
             {isSubmitting ? 'Enregistrement…' : 'Enregistrer'}

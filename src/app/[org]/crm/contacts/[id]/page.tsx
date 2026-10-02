@@ -6,9 +6,11 @@ import { getContact, getEntityTags, listTags, searchAccounts } from '@/lib/dal/c
 import { getEntityDocuments } from '@/lib/dal/documents'
 import { listActivity } from '@/lib/dal/activity'
 import { ContactDialog } from '@/components/crm/contact-dialog'
+import { CopyButton } from '@/components/copy-button'
 import { TagPicker } from '@/components/tag-picker'
 import { EntityDocuments } from '@/components/entity-documents'
 import { ActivityFeed } from '@/components/activity-feed'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { formatDate, formatRelative } from '@/lib/format'
 
@@ -32,18 +34,28 @@ export default async function ContactDetailPage({
   ])
 
   const fullName = [contact.first_name, contact.last_name].filter(Boolean).join(' ')
+  const initials = (
+    [contact.first_name, contact.last_name]
+      .filter(Boolean)
+      .map((s) => s!.charAt(0))
+      .join('') || '?'
+  ).toUpperCase()
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6 p-6">
+    <div className="mx-auto max-w-5xl space-y-6 p-4 sm:p-6">
       <div className="flex items-center gap-3">
         <Button
           variant="ghost"
           size="icon-sm"
           nativeButton={false}
+          aria-label="Retour aux contacts"
           render={<Link href={`/${orgSlug}/crm/contacts`} />}
         >
           <ArrowLeft className="size-4" />
         </Button>
+        <Avatar className="size-11 shrink-0">
+          <AvatarFallback className="text-sm font-semibold">{initials}</AvatarFallback>
+        </Avatar>
         <div className="min-w-0 flex-1">
           <h1 className="truncate text-2xl font-semibold">{fullName}</h1>
           <div className="mt-0.5 flex items-center gap-3 text-sm text-muted-foreground">
@@ -91,7 +103,7 @@ export default async function ContactDetailPage({
               entityId={id}
               documents={documents}
               canEdit={canEdit}
-              folder={`CRM — ${fullName || 'Contact'}`.slice(0, 90)}
+              folder={`Société/CRM — ${fullName || 'Contact'}`.slice(0, 90)}
             />
           </section>
         </div>
@@ -102,16 +114,20 @@ export default async function ContactDetailPage({
             <dl className="space-y-2">
               {contact.email && (
                 <div className="flex items-center gap-2">
-                  <Mail className="size-3.5 text-muted-foreground" />
-                  <a href={`mailto:${contact.email}`} className="truncate text-primary hover:underline">
+                  <Mail className="size-3.5 shrink-0 text-muted-foreground" />
+                  <a href={`mailto:${contact.email}`} className="min-w-0 truncate text-primary hover:underline">
                     {contact.email}
                   </a>
+                  <CopyButton value={contact.email} label="l’e-mail" />
                 </div>
               )}
               {contact.phone && (
                 <div className="flex items-center gap-2">
-                  <Phone className="size-3.5 text-muted-foreground" />
-                  <span>{contact.phone}</span>
+                  <Phone className="size-3.5 shrink-0 text-muted-foreground" />
+                  <a href={`tel:${contact.phone}`} className="min-w-0 truncate text-primary hover:underline">
+                    {contact.phone}
+                  </a>
+                  <CopyButton value={contact.phone} label="le téléphone" />
                 </div>
               )}
               <div className="text-xs text-muted-foreground">

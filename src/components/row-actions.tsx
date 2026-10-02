@@ -37,7 +37,7 @@ export function RowActions({
       <DropdownMenu>
         <DropdownMenuTrigger
           render={
-            <Button variant="ghost" size="icon-sm">
+            <Button variant="ghost" size="icon-sm" aria-label="Actions">
               <MoreHorizontal className="size-4" />
             </Button>
           }

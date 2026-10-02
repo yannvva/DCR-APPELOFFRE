@@ -63,7 +63,7 @@ export class BuildError extends Error {}
 
 function pythonBin(): string {
   for (const bin of ['python3', 'python', 'py']) {
-    const probe = spawnSync(bin, ['-c', 'import lxml'], { timeout: 15_000 })
+    const probe = spawnSync(/* turbopackIgnore: true */ bin, ['-c', 'import lxml'], { timeout: 15_000 })
     if (!probe.error && probe.status === 0) return bin
   }
   throw new BuildError(
@@ -72,7 +72,7 @@ function pythonBin(): string {
 }
 
 function runPython(bin: string, script: string, cwd: string): string {
-  const r = spawnSync(bin, [script], { cwd, timeout: 300_000, encoding: 'utf-8' })
+  const r = spawnSync(/* turbopackIgnore: true */ bin, [script], { cwd, timeout: 300_000, encoding: 'utf-8' })
   if (r.error) throw new BuildError(`Python : ${r.error.message}`)
   if (r.status !== 0) {
     const err = (r.stderr || r.stdout || 'échec inconnu').toString().slice(0, 800)
@@ -140,7 +140,7 @@ export function buildMemoireDocx(code: string, opts?: { full?: boolean }): Build
 
     // 4. Validation (mêmes contrôles que validate_docx.py)
     const warnings: string[] = []
-    const valOut = spawnSync(py, [join(ASSETS, 'validate_docx.py'), join(work, 'out.docx')], {
+    const valOut = spawnSync(/* turbopackIgnore: true */ py, [join(ASSETS, 'validate_docx.py'), join(work, 'out.docx')], {
       cwd: work,
       timeout: 60_000,
       encoding: 'utf-8',

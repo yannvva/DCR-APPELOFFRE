@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/table'
 import { formatRelative } from '@/lib/format'
 import { Badge } from '@/components/ui/badge'
+import { Suspense } from 'react'
 
 export default async function AccountsPage({
   params,
@@ -36,8 +37,8 @@ export default async function AccountsPage({
   const canEdit = ctx.role !== 'viewer'
 
   return (
-    <div className="space-y-4 p-6">
-      <div className="flex items-center justify-between">
+    <div className="space-y-4 p-4 sm:p-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold">Entreprises</h1>
           <p className="text-sm text-muted-foreground">Clients, prospects et partenaires</p>
@@ -51,7 +52,9 @@ export default async function AccountsPage({
         )}
       </div>
 
-      <SearchInput placeholder="Rechercher une entreprise…" />
+      <Suspense>
+        <SearchInput placeholder="Rechercher une entreprise…" />
+      </Suspense>
 
       {rows.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border py-16 text-center">
@@ -92,8 +95,9 @@ export default async function AccountsPage({
                       if (!c) return <span className="text-muted-foreground">—</span>
                       return (
                         <Link
-                          href={`/${orgSlug}/crm/accounts/${a.id}`}
+                          href={`/${orgSlug}/tenders?acheteur=${a.id}`}
                           className="inline-flex items-center gap-1.5 hover:underline"
+                          title="Voir les appels d’offres de cet acheteur"
                         >
                           <span className="text-sm tabular-nums">{c.total}</span>
                           {c.open > 0 && (
@@ -125,7 +129,9 @@ export default async function AccountsPage({
           </Table>
         </div>
       )}
-      <Pagination count={count} page={page} pageSize={pageSize} />
+      <Suspense>
+        <Pagination count={count} page={page} pageSize={pageSize} />
+      </Suspense>
     </div>
   )
 }

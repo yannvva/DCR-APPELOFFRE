@@ -18,18 +18,26 @@ import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { moveOpportunity } from '@/app/actions/crm'
 import { convertOpportunityToProject } from '@/app/actions/projects'
-import { formatEuros, formatDate } from '@/lib/format'
+import { OpportunityDialog } from '@/components/crm/opportunity-dialog'
+import { formatEuros, formatDate, isOverdue } from '@/lib/format'
 import type { Opportunity, PipelineStage } from '@/lib/types'
+
+type AccountOption = { id: string; name: string }
+type ContactOption = { id: string; name: string; accountId?: string | null }
 
 export function OpportunitiesKanban({
   orgSlug,
   stages,
   opportunities,
+  accounts,
+  contacts,
   canEdit,
 }: {
   orgSlug: string
   stages: PipelineStage[]
   opportunities: Opportunity[]
+  accounts: AccountOption[]
+  contacts: ContactOption[]
   canEdit: boolean
 }) {
   const router = useRouter()
@@ -42,6 +50,9 @@ export function OpportunitiesKanban({
     setItems(opportunities)
   }
   const [active, setActive] = useState<Opportunity | null>(null)
+  // Carte cliquée → dialogue d'édition (monté avec defaultOpen, démonté à
+  // la fermeture via onOpenChange).
+  const [editing, setEditing] = useState<Opportunity | null>(null)
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }))
 
   function onDragStart(e: DragStartEvent) {
@@ -94,6 +105,7 @@ export function OpportunitiesKanban({
             stage={stage}
             items={items.filter((o) => o.stage_id === stage.id)}
             canEdit={canEdit}
+            onOpen={setEditing}
             onConvert={canEdit ? convert : undefined}
           />
         ))}
@@ -101,6 +113,19 @@ export function OpportunitiesKanban({
       <DragOverlay>
         {active ? <OppCard opp={active} overlay /> : null}
       </DragOverlay>
+      {editing && (
+        <OpportunityDialog
+          key={editing.id}
+          orgSlug={orgSlug}
+          opportunity={editing}
+          accounts={accounts}
+          contacts={contacts}
+          defaultOpen
+          onOpenChange={(o) => {
+            if (!o) setEditing(null)
+          }}
+        />
+      )}
     </DndContext>
   )
 }
@@ -109,11 +134,13 @@ function KanbanColumn({
   stage,
   items,
   canEdit,
+  onOpen,
   onConvert,
 }: {
   stage: PipelineStage
   items: Opportunity[]
   canEdit: boolean
+  onOpen: (o: Opportunity) => void
   onConvert?: (oppId: string) => void
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: stage.id })
@@ -140,7 +167,13 @@ function KanbanColumn({
       </div>
       <div className="flex flex-1 flex-col gap-2 p-2">
         {items.map((opp) => (
-          <DraggableCard key={opp.id} opp={opp} disabled={!canEdit} onConvert={onConvert} />
+          <DraggableCard
+            key={opp.id}
+            opp={opp}
+            disabled={!canEdit}
+            onOpen={onOpen}
+            onConvert={onConvert}
+          />
         ))}
         {items.length === 0 && (
           <p className="px-2 py-6 text-center text-xs text-muted-foreground">
@@ -155,10 +188,12 @@ function KanbanColumn({
 function DraggableCard({
   opp,
   disabled,
+  onOpen,
   onConvert,
 }: {
   opp: Opportunity
   disabled: boolean
+  onOpen: (o: Opportunity) => void
   onConvert?: (oppId: string) => void
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
@@ -172,7 +207,7 @@ function DraggableCard({
       {...attributes}
       className={cn(isDragging && 'opacity-30')}
     >
-      <OppCard opp={opp} onConvert={onConvert} />
+      <OppCard opp={opp} onOpen={onOpen} onConvert={onConvert} />
     </div>
   )
 }
@@ -180,19 +215,24 @@ function DraggableCard({
 function OppCard({
   opp,
   overlay,
+  onOpen,
   onConvert,
 }: {
   opp: Opportunity
   overlay?: boolean
+  onOpen?: (o: Opportunity) => void
   onConvert?: (oppId: string) => void
 }) {
   const convertible = opp.status === 'won' && !opp.won_project_id && onConvert
   return (
     <div
+      onClick={onOpen && !overlay ? () => onOpen(opp) : undefined}
       className={cn(
-        'cursor-grab rounded-lg border border-border bg-card p-3 text-sm shadow-sm',
+        'cursor-grab rounded-lg border border-border bg-card p-3 text-sm shadow-sm transition-colors hover:border-foreground/25',
         overlay && 'rotate-2 shadow-lg',
+        opp.status === 'lost' && 'opacity-60',
       )}
+      title={overlay ? undefined : 'Cliquer pour modifier'}
     >
       <p className="font-medium leading-snug">{opp.title}</p>
       <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
@@ -200,8 +240,16 @@ function OppCard({
         <span className="tabular-nums">{formatEuros(opp.value_cents)}</span>
       </div>
       {opp.expected_close_date && (
-        <p className="mt-1 text-xs text-muted-foreground">
+        <p
+          className={cn(
+            'mt-1 text-xs',
+            isOverdue(opp.expected_close_date, opp.status !== 'open')
+              ? 'font-medium text-destructive'
+              : 'text-muted-foreground',
+          )}
+        >
           Échéance : {formatDate(opp.expected_close_date)}
+          {isOverdue(opp.expected_close_date, opp.status !== 'open') && ' — dépassée'}
         </p>
       )}
       {convertible && (

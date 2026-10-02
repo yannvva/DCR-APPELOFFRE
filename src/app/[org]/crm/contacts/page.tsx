@@ -1,9 +1,10 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
+import { Suspense } from 'react'
 import { requireMembership } from '@/lib/dal/auth'
 import { listContacts, searchAccounts } from '@/lib/dal/crm'
 import { ContactDialog } from '@/components/crm/contact-dialog'
-import { SearchInput, Pagination } from '@/components/list-toolbar'
+import { SearchInput, Pagination, ParamSelect } from '@/components/list-toolbar'
 import { RowActions } from '@/components/row-actions'
 import { deleteContact } from '@/app/actions/crm'
 import {
@@ -25,16 +26,17 @@ export default async function ContactsPage({
   if (!ctx) notFound()
 
   const q = typeof sp.q === 'string' ? sp.q : ''
+  const accountId = typeof sp.account === 'string' ? sp.account : undefined
   const page = Math.max(1, Number(sp.page ?? 1) || 1)
   const [{ rows, count, pageSize }, accounts] = await Promise.all([
-    listContacts(ctx, { q, page }),
+    listContacts(ctx, { q, page, accountId }),
     searchAccounts(ctx, '', 100),
   ])
   const canEdit = ctx.role !== 'viewer'
 
   return (
-    <div className="space-y-4 p-6">
-      <div className="flex items-center justify-between">
+    <div className="space-y-4 p-4 sm:p-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold">Contacts</h1>
           <p className="text-sm text-muted-foreground">Personnes liées à vos entreprises</p>
@@ -49,7 +51,26 @@ export default async function ContactsPage({
         )}
       </div>
 
-      <SearchInput placeholder="Rechercher un contact…" />
+      <div className="flex flex-wrap items-center gap-3">
+        <Suspense>
+          <SearchInput placeholder="Rechercher un contact…" />
+          <ParamSelect
+            param="account"
+            placeholder="Toutes les entreprises"
+            allLabel="Toutes les entreprises"
+            className="w-56"
+            options={accounts.map((a) => ({ value: a.id, label: a.name }))}
+          />
+        </Suspense>
+        {(q || accountId) && (
+          <Link
+            href={`/${orgSlug}/crm/contacts`}
+            className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+          >
+            Réinitialiser ({count} résultat{count > 1 ? 's' : ''})
+          </Link>
+        )}
+      </div>
 
       {rows.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border py-16 text-center">
@@ -81,8 +102,30 @@ export default async function ContactsPage({
                       {[c.first_name, c.last_name].filter(Boolean).join(' ')}
                     </Link>
                   </TableCell>
-                  <TableCell className="text-muted-foreground">{c.email ?? '—'}</TableCell>
-                  <TableCell className="text-muted-foreground">{c.phone ?? '—'}</TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {c.email ? (
+                      <a
+                        href={`mailto:${c.email}`}
+                        className="hover:text-foreground hover:underline"
+                      >
+                        {c.email}
+                      </a>
+                    ) : (
+                      '—'
+                    )}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {c.phone ? (
+                      <a
+                        href={`tel:${c.phone}`}
+                        className="hover:text-foreground hover:underline"
+                      >
+                        {c.phone}
+                      </a>
+                    ) : (
+                      '—'
+                    )}
+                  </TableCell>
                   <TableCell className="text-muted-foreground">
                     {c.account?.name ?? '—'}
                   </TableCell>
@@ -103,7 +146,9 @@ export default async function ContactsPage({
           </Table>
         </div>
       )}
-      <Pagination count={count} page={page} pageSize={pageSize} />
+      <Suspense>
+        <Pagination count={count} page={page} pageSize={pageSize} />
+      </Suspense>
     </div>
   )
 }

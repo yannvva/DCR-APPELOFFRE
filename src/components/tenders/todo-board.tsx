@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useEffect, useMemo, useState, useTransition } from 'react'
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import { toast } from 'sonner'
 import {
   ArrowUpDown,
@@ -316,6 +316,7 @@ export function TodoBoard({
   const [dragId, setDragId] = useState<string | null>(null)
   const [overCol, setOverCol] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const searchRef = useRef<HTMLInputElement>(null)
   // Statut affiché immédiatement après une action, tant que le serveur n'a pas
   // renvoyé la donnée fraîche (l'override devient caduc tout seul).
   const [overrides, setOverrides] = useState<Record<string, { from: string; to: string }>>({})
@@ -338,6 +339,62 @@ export function TodoBoard({
     return () => clearTimeout(t)
   }, [view, q, tender, assignee, deadline, sort, source, showDone])
 
+  // Vue mémorisée (même convention que la liste des AO) : restaurée quand
+  // l'URL n'impose pas de vue, réécrite à chaque bascule.
+  const VIEW_KEY = 'todo-vue'
+  useEffect(() => {
+    if (initial.view !== 'kanban') return
+    try {
+      const stored = localStorage.getItem(VIEW_KEY)
+      if (stored === 'kanban' || stored === 'liste' || stored === 'echeancier')
+        setView(stored)
+    } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  useEffect(() => {
+    try {
+      localStorage.setItem(VIEW_KEY, view)
+    } catch {}
+  }, [view])
+
+  // « / » focalise la recherche du board (raccourci global des listes).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null
+      if (
+        e.key === '/' &&
+        !e.metaKey &&
+        !e.ctrlKey &&
+        t?.tagName !== 'INPUT' &&
+        t?.tagName !== 'TEXTAREA' &&
+        !t?.isContentEditable
+      ) {
+        e.preventDefault()
+        searchRef.current?.focus()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
+  const hasFilters =
+    q !== '' ||
+    tender !== 'all' ||
+    assignee !== 'all' ||
+    deadline !== 'all' ||
+    source !== 'all' ||
+    showDone ||
+    sort !== 'deadline'
+  function resetFilters() {
+    setQ('')
+    setTender('all')
+    setAssignee('all')
+    setDeadline('all')
+    setSource('all')
+    setShowDone(false)
+    setSort('deadline')
+  }
+
   const rows = useMemo(() => toRows(items, tasks, orgSlug), [items, tasks, orgSlug])
 
   const effectiveStatus = (r: Row) => {
@@ -357,7 +414,9 @@ export function TodoBoard({
     return [...m.entries()].sort((a, b) => a[1].localeCompare(b[1], 'fr'))
   }, [items])
 
-  const filtered = useMemo(() => {
+  // Tous les filtres SAUF l'échéance : sert aux compteurs des chips
+  // (« Tout » doit afficher le vrai total, pas le sous-ensemble filtré).
+  const baseFiltered = useMemo(() => {
     const needle = q.trim().toLowerCase()
     return rows.filter((r) => {
       if (source === 'pieces' && r.kind !== 'piece') return false
@@ -370,10 +429,6 @@ export function TodoBoard({
       if (assignee === 'none' && r.assigneeId) return false
       if (assignee !== 'all' && assignee !== 'me' && assignee !== 'none' && r.assigneeId !== assignee)
         return false
-      if (deadline === 'late' && !isLateRow(r)) return false
-      if (deadline === 'week' && !(r.deadline && daysUntil(r.deadline) >= 0 && daysUntil(r.deadline) <= 7))
-        return false
-      if (deadline === 'none' && (r.deadline || r.tenderDeadline)) return false
       if (needle) {
         const hay = `${r.label} ${r.contextLabel} ${r.assigneeName ?? ''}`.toLowerCase()
         if (!hay.includes(needle)) return false
@@ -381,7 +436,17 @@ export function TodoBoard({
       return true
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, source, showDone, tender, assignee, deadline, q, meId, overrides])
+  }, [rows, source, showDone, tender, assignee, q, meId, overrides])
+
+  const filtered = useMemo(() => {
+    return baseFiltered.filter((r) => {
+      if (deadline === 'late' && !isLateRow(r)) return false
+      if (deadline === 'week' && !(r.deadline && daysUntil(r.deadline) >= 0 && daysUntil(r.deadline) <= 7))
+        return false
+      if (deadline === 'none' && (r.deadline || r.tenderDeadline)) return false
+      return true
+    })
+  }, [baseFiltered, deadline])
 
   const sorted = useMemo(() => {
     const arr = [...filtered]
@@ -401,11 +466,17 @@ export function TodoBoard({
       const o = overrides[r.id]
       return o && o.from === r.status ? o.to : r.status
     }
-    const late = filtered.filter(isLateRow).length
-    const open = filtered.filter((r) => st(r) !== 'valide' && st(r) !== 'done').length
-    const mine = filtered.filter((r) => r.assigneeId === meId).length
-    return { late, open, mine }
-  }, [filtered, meId, overrides])
+    // Compteurs calculés hors filtre d'échéance : les chips « En retard » /
+    // « Tout » affichent les vrais totaux quel que soit le filtre actif.
+    const late = baseFiltered.filter(isLateRow).length
+    const open = baseFiltered.filter((r) => st(r) !== 'valide' && st(r) !== 'done').length
+    const week = baseFiltered.filter(
+      (r) => r.deadline && daysUntil(r.deadline) >= 0 && daysUntil(r.deadline) <= 7,
+    ).length
+    const none = baseFiltered.filter((r) => !r.deadline && !r.tenderDeadline).length
+    const mine = baseFiltered.filter((r) => r.assigneeId === meId).length
+    return { late, open, week, none, mine }
+  }, [baseFiltered, meId, overrides])
 
   /* ------------------------------------------------------------- actions */
 
@@ -505,6 +576,10 @@ export function TodoBoard({
   /* ---------------------------------------------------------------- vues */
 
   function Kanban() {
+    if (sorted.length === 0)
+      return (
+        <EmptyState />
+      )
     const byColumn = new Map<string, Row[]>()
     for (const c of COLUMNS) byColumn.set(c.key, [])
     for (const r of sorted) {
@@ -808,6 +883,7 @@ export function TodoBoard({
   }
 
   function Echeancier() {
+    if (sorted.length === 0) return <EmptyState />
     const groups = BUCKETS.map((b) => ({
       ...b,
       rows: sorted.filter((r) => bucketOf(r) === b.key),
@@ -839,6 +915,28 @@ export function TodoBoard({
     )
   }
 
+  function EmptyState() {
+    return (
+      <div className="rounded-lg border border-dashed border-border px-4 py-12 text-center">
+        <p className="text-sm font-medium">Aucune ligne ne correspond aux filtres</p>
+        {hasFilters ? (
+          <button
+            type="button"
+            onClick={resetFilters}
+            className="mt-2 text-xs text-primary underline-offset-2 hover:underline"
+          >
+            Réinitialiser les filtres
+          </button>
+        ) : (
+          <p className="mt-1 text-xs text-muted-foreground">
+            Les pièces de checklist et les tâches de projet ouvertes
+            apparaîtront ici.
+          </p>
+        )}
+      </div>
+    )
+  }
+
   /* ------------------------------------------------------------- toolbar */
 
   const chip = (active: boolean) =>
@@ -855,13 +953,14 @@ export function TodoBoard({
         <div className="relative">
           <Search className="absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
           <input
+            ref={searchRef}
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Rechercher une pièce, un dossier…"
-            className="h-8 w-56 rounded-md border border-input bg-transparent pl-7 pr-7 text-xs placeholder:text-muted-foreground"
+            className="h-8 w-56 rounded-md border border-input bg-transparent pl-7 pr-9 text-xs placeholder:text-muted-foreground"
             aria-label="Rechercher"
           />
-          {q && (
+          {q ? (
             <button
               type="button"
               onClick={() => setQ('')}
@@ -870,6 +969,10 @@ export function TodoBoard({
             >
               <X className="size-3.5" />
             </button>
+          ) : (
+            <kbd className="pointer-events-none absolute right-2 top-1/2 hidden -translate-y-1/2 rounded border border-border bg-muted px-1 text-[10px] text-muted-foreground sm:block">
+              /
+            </kbd>
           )}
         </div>
 
@@ -956,11 +1059,14 @@ export function TodoBoard({
 
       <div className="flex flex-wrap items-center gap-2">
         <button type="button" className={chip(deadline === 'all')} onClick={() => setDeadline('all')}>
-          Tout ({filtered.length})
+          Toutes ({baseFiltered.length})
         </button>
         <button
           type="button"
-          className={chip(deadline === 'late')}
+          className={cn(
+            chip(deadline === 'late'),
+            counts.late > 0 && deadline !== 'late' && 'border-red-500/50 text-red-600',
+          )}
           onClick={() => setDeadline(deadline === 'late' ? 'all' : 'late')}
         >
           En retard ({counts.late})
@@ -970,24 +1076,33 @@ export function TodoBoard({
           className={chip(deadline === 'week')}
           onClick={() => setDeadline(deadline === 'week' ? 'all' : 'week')}
         >
-          7 jours
+          ≤ 7 jours ({counts.week})
         </button>
         <button
           type="button"
           className={chip(deadline === 'none')}
           onClick={() => setDeadline(deadline === 'none' ? 'all' : 'none')}
         >
-          Sans échéance
+          Sans échéance ({counts.none})
         </button>
         <button
           type="button"
           className={chip(showDone)}
           onClick={() => setShowDone((v) => !v)}
         >
-          Terminées
+          + Terminées
         </button>
+        {hasFilters && (
+          <button
+            type="button"
+            onClick={resetFilters}
+            className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <X className="size-3" /> Réinitialiser
+          </button>
+        )}
         <span className="ml-auto text-xs text-muted-foreground tabular-nums">
-          {counts.open} ouverte{counts.open > 1 ? 's' : ''}
+          {sorted.length} affichée{sorted.length > 1 ? 's' : ''}
           {counts.late > 0 && ` · ${counts.late} en retard`}
         </span>
       </div>

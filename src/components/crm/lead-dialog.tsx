@@ -101,6 +101,9 @@ export function LeadDialog({
             <div className="space-y-1.5">
               <Label htmlFor="source">Source</Label>
               <Input id="source" placeholder="Recommandation, web…" {...register('source')} />
+              {errors.source && (
+                <p className="text-xs text-destructive">{errors.source.message}</p>
+              )}
             </div>
             <div className="space-y-1.5">
               <Label>Entreprise</Label>
@@ -117,11 +120,17 @@ export function LeadDialog({
                   ))}
                 </SelectContent>
               </Select>
+              {errors.accountId && (
+                <p className="text-xs text-destructive">{errors.accountId.message}</p>
+              )}
             </div>
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="notes">Notes</Label>
             <Textarea id="notes" rows={3} {...register('notes')} />
+            {errors.notes && (
+              <p className="text-xs text-destructive">{errors.notes.message}</p>
+            )}
           </div>
           <Button type="submit" className="w-full" disabled={isSubmitting}>
             {isSubmitting ? 'Enregistrement…' : 'Enregistrer'}

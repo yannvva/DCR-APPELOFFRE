@@ -40,19 +40,34 @@ export function DocumentUpload({ orgSlug, folder }: { orgSlug: string; folder: s
       <input
         ref={inputRef}
         type="file"
+        multiple
         className="hidden"
         onChange={(e) => {
-          const file = e.target.files?.[0]
-          if (!file) return
-          const fd = new FormData()
-          fd.set('file', file)
-          fd.set('folder', folder)
-          startTransition(async () => {
-            const res = await uploadDocument(orgSlug, fd)
-            if (res?.error) toast.error(res.error)
-            else toast.success(`${file.name} envoyé`)
-          })
+          const files = [...(e.target.files ?? [])]
           e.target.value = ''
+          if (!files.length) return
+          // Envoi séquentiel : évite de saturer la connexion et permet un
+          // bilan par fichier (refus de type, taille > 25 Mo…).
+          startTransition(async () => {
+            let ok = 0
+            const failed: string[] = []
+            for (const file of files) {
+              const fd = new FormData()
+              fd.set('file', file)
+              fd.set('folder', folder)
+              const res = await uploadDocument(orgSlug, fd)
+              if (res?.error) failed.push(file.name)
+              else ok++
+            }
+            if (ok) toast.success(`${ok} fichier${ok > 1 ? 's' : ''} envoyé${ok > 1 ? 's' : ''}`)
+            if (failed.length) {
+              toast.error(
+                failed.length === 1
+                  ? `${failed[0]} refusé`
+                  : `${failed.length} fichiers refusés : ${failed.slice(0, 3).join(', ')}${failed.length > 3 ? '…' : ''}`,
+              )
+            }
+          })
         }}
       />
       <input

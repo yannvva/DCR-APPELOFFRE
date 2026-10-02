@@ -202,7 +202,12 @@ export function TaskDetail({
                   rows={2}
                   className="flex-1"
                 />
-                <Button type="submit" size="icon" disabled={pending || !body.trim()}>
+                <Button
+                  type="submit"
+                  size="icon"
+                  disabled={pending || !body.trim()}
+                  aria-label="Envoyer le commentaire"
+                >
                   <Send className="size-4" />
                 </Button>
               </form>

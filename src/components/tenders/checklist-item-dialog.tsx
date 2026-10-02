@@ -4,7 +4,7 @@ import { useRef, useState, useTransition } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { toast } from 'sonner'
-import { CalendarClock, FileText, ScanSearch, ShieldAlert, Upload } from 'lucide-react'
+import { CalendarClock, FileText, PenLine, ScanSearch, ShieldAlert, Upload } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -32,6 +32,7 @@ import {
   uploadAndAttachToChecklistItem,
   analyzeTenderDocument,
 } from '@/app/actions/tenders'
+import { setDocumentSigned } from '@/app/actions/documents'
 import { checklistItemSchema } from '@/lib/validation/domain'
 import {
   CHECKLIST_CATEGORY_LABELS,
@@ -233,14 +234,69 @@ export function ChecklistItemDialog({
                   Expirée le {formatDate(item.document.valid_until)}
                 </Badge>
               )}
-              {item.requires_signature && !item.document.is_signed && (
-                <Badge
-                  variant="secondary"
-                  className="bg-amber-500/15 text-[10px] text-amber-700"
-                >
-                  Non signée
-                </Badge>
-              )}
+              {item.requires_signature &&
+                (item.document.is_signed ? (
+                  canEdit ? (
+                    <button
+                      type="button"
+                      disabled={pending}
+                      title="La pièce n'est pas signée — cliquer pour annuler"
+                      className="shrink-0"
+                      onClick={() =>
+                        startTransition(async () => {
+                          const res = await setDocumentSigned(
+                            orgSlug,
+                            item.document!.id,
+                            false,
+                            tenderId,
+                          )
+                          if (res?.error) toast.error(res.error)
+                          else toast.success('Marque de signature retirée')
+                        })
+                      }
+                    >
+                      <Badge
+                        variant="secondary"
+                        className="bg-emerald-500/15 text-[10px] text-emerald-700 hover:opacity-80 dark:text-emerald-300"
+                      >
+                        Signée
+                      </Badge>
+                    </button>
+                  ) : (
+                    <Badge
+                      variant="secondary"
+                      className="bg-emerald-500/15 text-[10px] text-emerald-700 dark:text-emerald-300"
+                    >
+                      Signée
+                    </Badge>
+                  )
+                ) : (
+                  canEdit && (
+                    // Un clic = la pièce jointe EST signée → la ligne devient
+                    // validable sans forçage. (Annulable : recliquer.)
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-6 shrink-0 px-2 text-[11px] text-amber-700 dark:text-amber-300"
+                      disabled={pending}
+                      onClick={() =>
+                        startTransition(async () => {
+                          const res = await setDocumentSigned(
+                            orgSlug,
+                            item.document!.id,
+                            true,
+                            tenderId,
+                          )
+                          if (res?.error) toast.error(res.error)
+                          else toast.success('Pièce marquée signée')
+                        })
+                      }
+                    >
+                      <PenLine className="size-3" /> Marquer signée
+                    </Button>
+                  )
+                ))}
             </div>
           ) : (
             <p className="text-xs text-muted-foreground">Aucune pièce attachée.</p>
@@ -501,7 +557,7 @@ export function ChecklistItemDialog({
               <p className="text-xs text-destructive">{errors.label.message}</p>
             )}
           </div>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid gap-3 sm:grid-cols-3">
             <div className="space-y-1.5">
               <Label>Catégorie</Label>
               <Select

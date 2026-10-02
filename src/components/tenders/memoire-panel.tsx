@@ -76,8 +76,8 @@ const STATUS_LABELS: Record<string, string> = {
 function FicheRow({ label, values }: { label: string; values: string[] }) {
   if (!values.length) return null
   return (
-    <div className="flex gap-3 text-sm">
-      <span className="w-44 shrink-0 pt-0.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+    <div className="flex flex-col gap-1 text-sm sm:flex-row sm:gap-3">
+      <span className="shrink-0 pt-0.5 text-xs font-medium uppercase tracking-wide text-muted-foreground sm:w-44">
         {label}
       </span>
       <ul className="min-w-0 flex-1 list-disc space-y-0.5 pl-4">
@@ -114,15 +114,12 @@ export function MemoirePanel({
   const [lotPick, setLotPick] = useState('')
   const [lotLabel, setLotLabel] = useState('')
   const [pending, startTransition] = useTransition()
-  const [pendingStep, setPendingStep] = useState<{
-    title: string
-    steps: string[]
-  } | null>(null)
-  const [generating, setGenerating] = useState(false)
   const [building, setBuilding] = useState(false)
-  const [buildingFull, setBuildingFull] = useState(false)
   // Pipeline enchaîné : 0 analyse DCE, 1 génération contenu, 2 mémoire complet.
   const [pipelineStep, setPipelineStep] = useState<number | null>(null)
+  // Garde synchrone contre le double-clic (pipelineStep remonte au rendu
+  // suivant seulement).
+  const pipelineBusy = useRef(false)
   const [importOpen, setImportOpen] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
@@ -188,51 +185,18 @@ export function MemoirePanel({
     })
   }
 
+  // Première étape incomplète : « Tout lancer » reprend là sans refaire le
+  // travail déjà produit (l'analyse DCE coûte un appel IA de plusieurs minutes).
+  const firstIncompleteStep = !hasFiche ? 0 : !run?.content_document_id ? 1 : 2
+
   function analyze() {
     if (!run) return
-    setPendingStep({
-      title: `Analyse du DCE — ${run.lot_label}`,
-      steps: [
-        'Chargement des pièces du lot',
-        'Extraction du texte',
-        'Analyse IA ciblée sur le lot (critères, périmètre, échéances)',
-        'Remplissage de la fiche d’analyse',
-      ],
-    })
-    startTransition(async () => {
-      try {
-        const res = await analyzeMemoireDce(orgSlug, tenderId, run.id)
-        if (res.error) {
-          toast.error(res.error)
-          return
-        }
-        toast.success(
-          `Fiche remplie : ${res.data?.criteres ?? 0} critère(s), ${res.data?.manquants ?? 0} donnée(s) manquante(s)` +
-            (res.data?.skipped ? ` — ${res.data.skipped} pièce(s) illisible(s)` : ''),
-        )
-        router.refresh()
-      } finally {
-        setPendingStep(null)
-      }
-    })
+    startTransition(() => runPipeline(0))
   }
 
   function generate() {
     if (!run) return
-    setGenerating(true)
-    startTransition(async () => {
-      try {
-        const res = await generateMemoireContent(orgSlug, tenderId, run.id)
-        if (res.error) {
-          toast.error(res.error)
-          return
-        }
-        toast.success(`Fichier ${res.data?.filename} généré et rangé dans Documents`)
-        router.refresh()
-      } finally {
-        setGenerating(false)
-      }
-    })
+    startTransition(() => runPipeline(1))
   }
 
   async function openContent(id?: string | null) {
@@ -267,57 +231,59 @@ export function MemoirePanel({
 
   function buildFull() {
     if (!run) return
-    setBuildingFull(true)
-    startTransition(async () => {
-      try {
-        const res = await buildMemoireComplet(orgSlug, tenderId, run.id)
-        if (res.error) {
-          toast.error(res.error)
-          return
-        }
-        toast.success(`${res.data?.filename} construit et rangé dans Documents`)
-        router.refresh()
-      } finally {
-        setBuildingFull(false)
-      }
-    })
+    startTransition(() => runPipeline(2))
   }
 
   /**
-   * Pipeline complet en un clic : analyse du DCE → génération du fichier de
-   * contenu → construction du mémoire complet (.docx). Un échec stoppe la
-   * chaîne en indiquant l'étape fautive.
+   * Pipeline enchaîné « petit à petit » : chaque bouton relance son étape PUIS
+   * enchaîne les suivantes (analyse DCE → fichier de contenu → mémoire
+   * complet .docx). Les prérequis manquants tournent d'abord — cliquer « 4.
+   * Mémoire complet » sur un run sans contenu génère le contenu avant de
+   * construire. « Tout lancer » reprend à la première étape incomplète. Un
+   * échec stoppe la chaîne ; relancer reprend au même point.
    */
-  async function runPipeline() {
-    if (!run || pipelineStep != null) return
+  async function runPipeline(fromStep: number) {
+    if (!run || pipelineStep != null || pipelineBusy.current) return
+    pipelineBusy.current = true
     const stepTitles = [
       'Analyse du DCE',
       'Génération du contenu',
       'Mémoire complet (.docx)',
     ]
-    // Compteur local : `pipelineStep` (state) resterait figé dans le catch.
-    let step = 0
+    // Les prérequis manquants tournent avant l'étape demandée : une étape
+    // explicitement cliquée est refaite, les étapes déjà produites avant
+    // elle ne le sont pas.
+    const start = Math.min(fromStep, firstIncompleteStep)
+    let step = start
     try {
-      setPipelineStep(step)
-      const a = await analyzeMemoireDce(orgSlug, tenderId, run.id)
-      if (a.error) throw new Error(a.error)
-
-      step = 1
-      setPipelineStep(step)
-      const g = await generateMemoireContent(orgSlug, tenderId, run.id)
-      if (g.error) throw new Error(g.error)
-
+      if (step <= 0) {
+        setPipelineStep(0)
+        const a = await analyzeMemoireDce(orgSlug, tenderId, run.id)
+        if (a.error) throw new Error(a.error)
+        router.refresh()
+      }
+      // Le fichier de contenu est requis pour construire le mémoire — il est
+      // généré si absent, ou régénéré quand la chaîne repart de l'analyse ou
+      // de la génération (le contenu dépend de la fiche d'analyse).
+      if (step <= 1 && (fromStep <= 1 || !run.content_document_id)) {
+        step = 1
+        setPipelineStep(1)
+        const g = await generateMemoireContent(orgSlug, tenderId, run.id)
+        if (g.error) throw new Error(g.error)
+        router.refresh()
+      }
       step = 2
-      setPipelineStep(step)
+      setPipelineStep(2)
       const b = await buildMemoireComplet(orgSlug, tenderId, run.id)
       if (b.error) throw new Error(b.error)
 
       toast.success(`${b.data?.filename} — pipeline terminé`)
     } catch (e) {
       toast.error(
-        `Pipeline interrompu à l’étape ${step + 1} (${stepTitles[step]}) : ${e instanceof Error ? e.message : 'erreur'}`,
+        `Pipeline interrompu à l’étape ${step + 1} (${stepTitles[step]}) : ${e instanceof Error ? e.message : 'erreur'} — relancez pour reprendre au même point`,
       )
     } finally {
+      pipelineBusy.current = false
       setPipelineStep(null)
       router.refresh()
     }
@@ -371,8 +337,12 @@ export function MemoirePanel({
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
         {runs.length > 0 && (
-          <Select value={run?.id ?? ''} onValueChange={(v) => setRunId(v ?? '')}>
-            <SelectTrigger className="w-72">
+          <Select
+            value={run?.id ?? ''}
+            onValueChange={(v) => setRunId(v ?? '')}
+            disabled={pipelineStep != null}
+          >
+            <SelectTrigger className="w-full max-w-72">
               <SelectValue placeholder="Run mémoire…" />
             </SelectTrigger>
             <SelectContent>
@@ -393,7 +363,11 @@ export function MemoirePanel({
           <Dialog open={createOpen} onOpenChange={setCreateOpen}>
             <DialogTrigger
               render={
-                <Button size="sm" variant={runs.length ? 'outline' : 'default'}>
+                <Button
+                  size="sm"
+                  variant={runs.length ? 'outline' : 'default'}
+                  disabled={pipelineStep != null}
+                >
                   <Plus className="size-4" /> Nouveau mémoire
                 </Button>
               }
@@ -463,7 +437,7 @@ export function MemoirePanel({
           <Dialog open={importOpen} onOpenChange={setImportOpen}>
             <DialogTrigger
               render={
-                <Button size="sm" variant="outline">
+                <Button size="sm" variant="outline" disabled={pipelineStep != null}>
                   <Upload className="size-4" /> Importer un .docx
                 </Button>
               }
@@ -543,6 +517,7 @@ export function MemoirePanel({
                   variant="ghost"
                   size="icon-sm"
                   aria-label="Supprimer le run"
+                  disabled={pipelineStep != null}
                 >
                   <Trash2 className="size-4 text-destructive" />
                 </Button>
@@ -558,7 +533,10 @@ export function MemoirePanel({
               </AlertDialogHeader>
               <AlertDialogFooter>
                 <AlertDialogCancel>Annuler</AlertDialogCancel>
-                <AlertDialogAction onClick={removeRun} disabled={pending}>
+                <AlertDialogAction
+                  onClick={removeRun}
+                  disabled={pending || pipelineStep != null}
+                >
                   Supprimer
                 </AlertDialogAction>
               </AlertDialogFooter>
@@ -581,30 +559,32 @@ export function MemoirePanel({
               {canEdit && (
                 <Button
                   size="sm"
-                  onClick={runPipeline}
+                  onClick={() => startTransition(() => runPipeline(firstIncompleteStep))}
                   disabled={
-                    pipelineStep != null ||
-                    pending ||
-                    generating ||
-                    building ||
-                    buildingFull
+                    pipelineStep != null || pending || building
                   }
+                  title="Reprend à la première étape incomplète et enchaîne jusqu'au mémoire complet"
                 >
                   {pipelineStep != null ? (
                     <Loader2 className="size-4 animate-spin" />
                   ) : (
                     <BookOpenCheck className="size-4" />
                   )}
-                  Tout lancer
+                  {firstIncompleteStep === 0
+                    ? 'Tout lancer'
+                    : firstIncompleteStep === 2
+                      ? 'Régénérer le mémoire'
+                      : 'Continuer'}
                 </Button>
               )}
               <Button
                 size="sm"
                 variant={run.status === 'draft' ? 'default' : 'outline'}
                 onClick={analyze}
-                disabled={!canEdit || pending || generating || pipelineStep != null}
+                disabled={!canEdit || pending || pipelineStep != null || building}
+                title="Analyse le DCE puis enchaîne génération et mémoire complet"
               >
-                {pending && !generating ? (
+                {pipelineStep === 0 ? (
                   <Loader2 className="size-4 animate-spin" />
                 ) : (
                   <BookOpenCheck className="size-4" />
@@ -615,11 +595,10 @@ export function MemoirePanel({
                 size="sm"
                 variant={hasFiche ? 'default' : 'outline'}
                 onClick={generate}
-                disabled={
-                  !canEdit || !hasFiche || pending || generating || pipelineStep != null
-                }
+                disabled={!canEdit || pending || pipelineStep != null || building}
+                title="(Re)génère le fichier de contenu puis construit le mémoire complet — lance d'abord l'analyse si elle manque"
               >
-                {generating ? (
+                {pipelineStep === 1 ? (
                   <Loader2 className="size-4 animate-spin" />
                 ) : (
                   <PenLine className="size-4" />
@@ -634,11 +613,10 @@ export function MemoirePanel({
                   !canEdit ||
                   !run.content_document_id ||
                   pending ||
-                  generating ||
                   building ||
-                  buildingFull ||
                   pipelineStep != null
                 }
+                title="Construit le .docx étape 1 (sections 2/4/5) — sortie intermédiaire, sans enchaîner"
               >
                 {building ? (
                   <Loader2 className="size-4 animate-spin" />
@@ -653,15 +631,13 @@ export function MemoirePanel({
                 onClick={buildFull}
                 disabled={
                   !canEdit ||
-                  !run.content_document_id ||
                   pending ||
-                  generating ||
                   building ||
-                  buildingFull ||
                   pipelineStep != null
                 }
+                title="Construit le mémoire complet — génère d'abord le contenu (et l'analyse) si nécessaire"
               >
-                {buildingFull ? (
+                {pipelineStep === 2 ? (
                   <Loader2 className="size-4 animate-spin" />
                 ) : (
                   <FileText className="size-4" />
@@ -680,36 +656,14 @@ export function MemoirePanel({
                   className="w-full"
                 />
               )}
-              {pipelineStep == null && (building || buildingFull) && (
+              {pipelineStep == null && building && (
                 <ActionProgress
-                  title={
-                    buildingFull
-                      ? 'Construction du mémoire complet (.docx)'
-                      : 'Construction du mémoire .docx — étape 1'
-                  }
+                  title="Construction du mémoire .docx — étape 1"
                   steps={[
                     'Injection du contenu dans le gabarit DCR',
                     'Validation XML du document',
                     'Rangement et liaison au dossier',
                   ]}
-                  className="w-full"
-                />
-              )}
-              {generating && (
-                <ActionProgress
-                  title="Rédaction du fichier de contenu (7 parties, sections 1 à 7 selon critères du RC)"
-                  steps={[
-                    'Génération IA section par section',
-                    'Assemblage du fichier Python',
-                    'Rangement dans Documents',
-                  ]}
-                  className="w-full"
-                />
-              )}
-              {pending && !generating && pendingStep && (
-                <ActionProgress
-                  title={pendingStep.title}
-                  steps={pendingStep.steps}
                   className="w-full"
                 />
               )}
@@ -769,8 +723,8 @@ export function MemoirePanel({
                 <FicheRow label="Clauses sociales / env." values={analysis.clauses ?? []} />
                 <FicheRow label="Pièces à remettre" values={analysis.pieces_a_remettre ?? []} />
                 {(analysis.prix || analysis.reception) && (
-                  <div className="flex gap-3 text-sm">
-                    <span className="w-44 shrink-0 pt-0.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  <div className="flex flex-col gap-1 text-sm sm:flex-row sm:gap-3">
+                    <span className="shrink-0 pt-0.5 text-xs font-medium uppercase tracking-wide text-muted-foreground sm:w-44">
                       Prix / réception
                     </span>
                     <p className="min-w-0 flex-1 text-sm">

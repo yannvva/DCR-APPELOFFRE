@@ -56,6 +56,11 @@ export function ARetenirCard({
         Number(y.primary ?? false) - Number(x.primary ?? false) ||
         x.date.localeCompare(y.date),
     )
+  // Échéances déjà passées (PGC, rapports intermédiaires d'un DCE ancien…) :
+  // elles documentent le calendrier mais ne sont plus « à ne pas manquer » —
+  // repliées sous un dépliant plutôt qu'affichées au même niveau.
+  const upcomingDeadlines = deadlineEntries.filter((d) => !isOverdue(d.date))
+  const pastDeadlines = deadlineEntries.filter((d) => isOverdue(d.date))
 
   return (
     <Card className="border-primary/40 bg-primary/5">
@@ -113,9 +118,16 @@ export function ARetenirCard({
                 </p>
               )}
               {visit.details && (
-                <blockquote className="whitespace-pre-wrap border-l-2 border-primary/30 pl-2 text-xs italic text-muted-foreground">
-                  {visit.details}
-                </blockquote>
+                // Justificatif (citation RC/CCTP) : preuve utile mais longue —
+                // repliée pour ne pas allonger la carte.
+                <details className="text-xs text-muted-foreground">
+                  <summary className="cursor-pointer select-none">
+                    Extrait des pièces
+                  </summary>
+                  <blockquote className="mt-1 whitespace-pre-wrap border-l-2 border-primary/30 pl-2 italic">
+                    {visit.details}
+                  </blockquote>
+                </details>
               )}
               {visit.mandatory && (
                 <p className="font-medium text-red-600 dark:text-red-400">
@@ -138,39 +150,75 @@ export function ARetenirCard({
           {a.contacts.length === 0 ? (
             <p className="text-muted-foreground">Aucun contact extrait des pièces.</p>
           ) : (
-            <ul className="space-y-1.5">
-              {a.contacts.slice(0, 5).map((c, i) => (
-                <li key={i} className="space-y-0.5">
-                  <p>
-                    {c.name ?? 'Contact'}
-                    {c.role && <span className="text-muted-foreground"> — {c.role}</span>}
-                  </p>
-                  <p className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs">
-                    {c.email && (
-                      <a
-                        href={`mailto:${c.email}`}
-                        className="inline-flex items-center gap-1 text-primary hover:underline"
-                      >
-                        <Mail className="size-3" /> {c.email}
-                      </a>
-                    )}
-                    {c.phone && (
-                      <a
-                        href={`tel:${c.phone.replace(/\s/g, '')}`}
-                        className="inline-flex items-center gap-1 text-primary hover:underline"
-                      >
-                        <Phone className="size-3" /> {c.phone}
-                      </a>
-                    )}
-                  </p>
-                </li>
-              ))}
-              {a.contacts.length > 5 && (
-                <li className="text-xs text-muted-foreground">
-                  +{a.contacts.length - 5} autre(s) contact(s)
-                </li>
+            // 3 contacts visibles, le reste sous un dépliant — un DCE peut
+            // citer MOA, MOE, CSPS, contrôleur, copie… qui noyaient la carte.
+            <>
+              <ul className="space-y-1.5">
+                {a.contacts.slice(0, 3).map((c, i) => (
+                  <li key={i} className="space-y-0.5">
+                    <p>
+                      {c.name ?? 'Contact'}
+                      {c.role && <span className="text-muted-foreground"> — {c.role}</span>}
+                    </p>
+                    <p className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs">
+                      {c.email && (
+                        <a
+                          href={`mailto:${c.email}`}
+                          className="inline-flex items-center gap-1 text-primary hover:underline"
+                        >
+                          <Mail className="size-3" /> {c.email}
+                        </a>
+                      )}
+                      {c.phone && (
+                        <a
+                          href={`tel:${c.phone.replace(/\s/g, '')}`}
+                          className="inline-flex items-center gap-1 text-primary hover:underline"
+                        >
+                          <Phone className="size-3" /> {c.phone}
+                        </a>
+                      )}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+              {a.contacts.length > 3 && (
+                <details className="text-xs text-muted-foreground">
+                  <summary className="cursor-pointer select-none">
+                    +{a.contacts.length - 3} autre(s) contact(s)
+                  </summary>
+                  <ul className="mt-1.5 space-y-1.5">
+                    {a.contacts.slice(3).map((c, i) => (
+                      <li key={i} className="space-y-0.5">
+                        <p>
+                          {c.name ?? 'Contact'}
+                          {c.role && (
+                            <span className="text-muted-foreground"> — {c.role}</span>
+                          )}
+                        </p>
+                        <p className="flex flex-wrap gap-x-3 gap-y-0.5">
+                          {c.email && (
+                            <a
+                              href={`mailto:${c.email}`}
+                              className="inline-flex items-center gap-1 text-primary hover:underline"
+                            >
+                              <Mail className="size-3" /> {c.email}
+                            </a>
+                          )}
+                          {c.phone && (
+                            <a
+                              href={`tel:${c.phone.replace(/\s/g, '')}`}
+                              className="inline-flex items-center gap-1 text-primary hover:underline"
+                            >
+                              <Phone className="size-3" /> {c.phone}
+                            </a>
+                          )}
+                        </p>
+                      </li>
+                    ))}
+                  </ul>
+                </details>
               )}
-            </ul>
+            </>
           )}
         </div>
 
@@ -182,39 +230,61 @@ export function ARetenirCard({
           {deadlineEntries.length === 0 ? (
             <p className="text-muted-foreground">Aucune échéance extraite des pièces.</p>
           ) : (
-            <ul className="space-y-1">
-              {deadlineEntries.map((d, i) => {
-                const past = isOverdue(d.date)
-                const days = daysUntil(d.date)
-                return (
-                  <li
-                    key={i}
-                    className={cn(
-                      'flex items-baseline justify-between gap-2',
-                      past && 'opacity-50',
-                    )}
-                  >
-                    <span className="min-w-0">
-                      <span className="text-muted-foreground">{d.label} : </span>
-                      <span className={cn(d.primary && 'font-medium')}>
-                        {formatDate(d.date)}
-                      </span>
-                    </span>
-                    <span
-                      className={cn(
-                        'shrink-0 text-xs tabular-nums',
-                        past && 'text-muted-foreground',
-                        !past && d.primary && days <= 7 && 'font-medium text-red-600 dark:text-red-400',
-                        !past && d.primary && days > 7 && 'text-amber-600 dark:text-amber-400',
-                        !past && !d.primary && 'text-muted-foreground',
-                      )}
-                    >
-                      {past ? 'passée' : days === 0 ? 'aujourd’hui' : `J-${days}`}
-                    </span>
-                  </li>
-                )
-              })}
-            </ul>
+            <>
+              {upcomingDeadlines.length === 0 ? (
+                <p className="text-muted-foreground">
+                  Toutes les échéances extraites sont passées.
+                </p>
+              ) : (
+                <ul className="space-y-1">
+                  {upcomingDeadlines.map((d, i) => {
+                    const days = daysUntil(d.date)
+                    return (
+                      <li
+                        key={i}
+                        className="flex items-baseline justify-between gap-2"
+                      >
+                        <span className="min-w-0">
+                          <span className="text-muted-foreground">{d.label} : </span>
+                          <span className={cn(d.primary && 'font-medium')}>
+                            {formatDate(d.date)}
+                          </span>
+                        </span>
+                        <span
+                          className={cn(
+                            'shrink-0 text-xs tabular-nums',
+                            d.primary && days <= 7 && 'font-medium text-red-600 dark:text-red-400',
+                            d.primary && days > 7 && 'text-amber-600 dark:text-amber-400',
+                            !d.primary && 'text-muted-foreground',
+                          )}
+                        >
+                          {days === 0 ? 'aujourd’hui' : `J-${days}`}
+                        </span>
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
+              {pastDeadlines.length > 0 && (
+                <details className="text-xs text-muted-foreground">
+                  <summary className="cursor-pointer select-none">
+                    {pastDeadlines.length} échéance{pastDeadlines.length > 1 ? 's' : ''} passée
+                    {pastDeadlines.length > 1 ? 's' : ''} (calendrier du DCE)
+                  </summary>
+                  <ul className="mt-1 space-y-0.5 opacity-70">
+                    {pastDeadlines.map((d, i) => (
+                      <li key={i} className="flex items-baseline justify-between gap-2">
+                        <span className="min-w-0">
+                          <span>{d.label} : </span>
+                          {formatDate(d.date)}
+                        </span>
+                        <span className="shrink-0 tabular-nums">passée</span>
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              )}
+            </>
           )}
           {a.deadlines.offer_validity && (
             <p className="text-muted-foreground">
@@ -223,7 +293,8 @@ export function ARetenirCard({
           )}
           {nbObligatoires > 0 && (
             <p className="text-muted-foreground">
-              {nbObligatoires} pièce(s) obligatoire(s) dans la réponse — voir l’onglet
+              Le DCE exige {nbObligatoires} pièce
+              {nbObligatoires > 1 ? 's' : ''} dans la réponse — détail dans l’onglet
               Checklist.
             </p>
           )}

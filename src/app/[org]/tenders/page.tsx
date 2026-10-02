@@ -14,15 +14,30 @@ import { SortButton } from '@/components/tenders/sortable-head'
 import { RowActions } from '@/components/row-actions'
 import { deleteTender } from '@/app/actions/tenders'
 import { Badge } from '@/components/ui/badge'
-import { formatDate, formatEuros, isOverdue, isDueSoon } from '@/lib/format'
+import { formatDate, formatEuros, daysUntil, isOverdue, isDueSoon } from '@/lib/format'
 import { tenderPath } from '@/lib/slug'
 import { cn } from '@/lib/utils'
-import { TENDER_STATUS_COLORS, TENDER_STATUS_LABELS } from '@/components/tenders/constants'
+import {
+  TENDER_PRESET_LABELS,
+  TENDER_STATUS_COLORS,
+  TENDER_STATUS_LABELS,
+  type TenderPreset,
+} from '@/components/tenders/constants'
 import { Button } from '@/components/ui/button'
 import type { TenderStatus } from '@/lib/types'
-import { FileSignature, Pencil } from 'lucide-react'
+import { FileSignature, Pencil, X } from 'lucide-react'
 import { Suspense } from 'react'
 import { StatusFilter } from './status-filter'
+import { PresetChips } from './preset-chips'
+
+const TENDER_PRESETS = new Set<string>([
+  'open',
+  'due_soon',
+  'overdue',
+  'visit',
+  'incomplete',
+  'mine',
+])
 
 export default async function TendersPage({
   params,
@@ -35,17 +50,39 @@ export default async function TendersPage({
 
   const q = typeof sp.q === 'string' ? sp.q : ''
   const status = typeof sp.status === 'string' ? (sp.status as TenderStatus) : undefined
+  const preset = TENDER_PRESETS.has(String(sp.preset))
+    ? (String(sp.preset) as TenderPreset)
+    : undefined
   const page = Math.max(1, Number(sp.page ?? 1) || 1)
   const view = sp.view === 'cards' ? 'cards' : 'list'
   const sort = typeof sp.sort === 'string' ? sp.sort : undefined
   const order = sp.order === 'desc' ? 'desc' : 'asc'
+  // ?acheteur=<uuid> — lien croisé depuis la fiche entreprise CRM.
+  const buyerId = typeof sp.acheteur === 'string' && sp.acheteur ? sp.acheteur : undefined
 
   const [{ rows, count, pageSize }, accounts, members, stats] = await Promise.all([
-    listTenders(ctx, { q, status, page, sort, order }),
+    // 'mine' = responsable = utilisateur courant ; les autres presets sont
+    // résolus dans la DAL.
+    listTenders(ctx, {
+      q,
+      status,
+      page,
+      sort,
+      order,
+      buyerId,
+      preset: preset && preset !== 'mine' ? preset : undefined,
+      responsibleId: preset === 'mine' ? ctx.user.id : undefined,
+    }),
     searchAccounts(ctx, '', 100),
     listOrgMembers(ctx),
     listTenderStats(ctx),
   ])
+  const filtered = !!(q || status || preset || buyerId)
+  const buyerName = buyerId
+    ? (accounts.find((a) => a.id === buyerId)?.name ??
+      rows[0]?.buyer?.name ??
+      'Acheteur')
+    : null
   const canEdit = ctx.role !== 'viewer'
   const canDelete = ctx.role === 'owner' || ctx.role === 'admin'
   const memberOptions = members.map((m) => ({
@@ -54,7 +91,7 @@ export default async function TendersPage({
   }))
 
   return (
-    <div className="space-y-4 p-6">
+    <div className="space-y-4 p-4 sm:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold">Appels d’offres</h1>
@@ -73,21 +110,30 @@ export default async function TendersPage({
         )}
       </div>
 
-      {/* Synthèse du portefeuille — l'essentiel en un coup d'œil */}
+      {/* Synthèse du portefeuille — chaque tuile est un filtre intelligent */}
       {stats.total > 0 && (
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          <div className="rounded-lg border border-border bg-card px-3 py-2">
+          <Link
+            href={`/${orgSlug}/tenders?preset=open`}
+            className="rounded-lg border border-border bg-card px-3 py-2 transition-colors hover:border-primary/40 hover:bg-primary/5"
+          >
             <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">En cours</p>
             <p className="mt-0.5 text-lg font-bold tabular-nums">{stats.open}<span className="ml-1 text-xs font-normal text-muted-foreground">/ {stats.total}</span></p>
-          </div>
-          <div className={cn('rounded-lg border px-3 py-2', stats.dueSoon ? 'border-amber-500/40 bg-amber-500/10' : 'border-border bg-card')}>
+          </Link>
+          <Link
+            href={`/${orgSlug}/tenders?preset=due_soon`}
+            className={cn('rounded-lg border px-3 py-2 transition-colors hover:border-primary/40', stats.dueSoon ? 'border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/15' : 'border-border bg-card hover:bg-primary/5')}
+          >
             <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Urgents ≤ 7 j</p>
             <p className={cn('mt-0.5 text-lg font-bold tabular-nums', stats.dueSoon && 'text-amber-600 dark:text-amber-300')}>{stats.dueSoon}</p>
-          </div>
-          <div className={cn('rounded-lg border px-3 py-2', stats.overdue ? 'border-red-500/40 bg-red-500/10' : 'border-border bg-card')}>
+          </Link>
+          <Link
+            href={`/${orgSlug}/tenders?preset=overdue`}
+            className={cn('rounded-lg border px-3 py-2 transition-colors hover:border-primary/40', stats.overdue ? 'border-red-500/40 bg-red-500/10 hover:bg-red-500/15' : 'border-border bg-card hover:bg-primary/5')}
+          >
             <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Dépassés</p>
             <p className={cn('mt-0.5 text-lg font-bold tabular-nums', stats.overdue && 'text-destructive')}>{stats.overdue}</p>
-          </div>
+          </Link>
           <div className="rounded-lg border border-border bg-card px-3 py-2">
             <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Montant en cours</p>
             <p className="mt-0.5 text-lg font-bold tabular-nums">{stats.openAmountCents ? formatEuros(stats.openAmountCents) : '—'}</p>
@@ -95,11 +141,29 @@ export default async function TendersPage({
         </div>
       )}
 
-      <div className="flex items-center gap-3">
+      <div className="space-y-2">
+        <div className="flex flex-wrap items-center gap-3">
+          <Suspense>
+            <SearchInput placeholder="Rechercher (intitulé, référence, acheteur)…" />
+            <StatusFilter />
+            <ViewToggle />
+          </Suspense>
+          <span className="ml-auto text-xs tabular-nums text-muted-foreground">
+            {count} dossier{count > 1 ? 's' : ''}
+            {preset ? ` · ${TENDER_PRESET_LABELS[preset]}` : ''}
+            {buyerName ? ` · ${buyerName}` : ''}
+          </span>
+          {filtered && (
+            <Link
+              href={`/${orgSlug}/tenders${view === 'cards' ? '?view=cards' : ''}`}
+              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <X className="size-3.5" /> Réinitialiser
+            </Link>
+          )}
+        </div>
         <Suspense>
-          <SearchInput placeholder="Rechercher (intitulé, référence)…" />
-          <StatusFilter />
-          <ViewToggle />
+          <PresetChips mine />
         </Suspense>
       </div>
 
@@ -180,9 +244,11 @@ export default async function TendersPage({
                     aria-label={t.title}
                     className="absolute inset-0 z-0"
                   />
-                  <div className="grid items-center gap-x-4 gap-y-2 px-4 py-3 lg:grid-cols-[minmax(0,1fr)_7.5rem_6.5rem_9rem_8rem_7rem_4.5rem]">
+                  {/* Mobile : flex-wrap (titre pleine largeur + meta-ligne
+                      compacte). lg+ : grille alignée sur l'en-tête. */}
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 lg:grid lg:grid-cols-[minmax(0,1fr)_7.5rem_6.5rem_9rem_8rem_7rem_4.5rem]">
                     {/* Marché : titre, référence, acheteur, alertes */}
-                    <div className="min-w-0">
+                    <div className="w-full min-w-0 lg:w-auto">
                       <p className="truncate font-medium leading-snug">
                         <span className="group-hover:underline">{t.title}</span>
                       </p>
@@ -226,6 +292,11 @@ export default async function TendersPage({
                         {formatDate(t.response_deadline)}
                       </p>
                       <DeadlineBadge deadline={t.response_deadline} status={t.status} />
+                      {!closed && t.questions_deadline && !isOverdue(t.questions_deadline) && (
+                        <p className="mt-0.5 whitespace-nowrap text-[10px] font-medium tabular-nums text-sky-600 dark:text-sky-400">
+                          Questions J-{daysUntil(t.questions_deadline)}
+                        </p>
+                      )}
                     </div>
 
                     {/* Montant */}
@@ -268,9 +339,10 @@ export default async function TendersPage({
                       </Badge>
                     </div>
 
-                    {/* Actions */}
+                    {/* Actions — ml-auto pousse à droite sur la meta-ligne
+                        mobile ; lg : dernière colonne de la grille. */}
                     {canEdit ? (
-                      <div className="relative z-10 flex items-center justify-end gap-0.5">
+                      <div className="relative z-10 ml-auto flex items-center justify-end gap-0.5 lg:ml-0">
                         <TenderDialog
                           orgSlug={orgSlug}
                           tender={t}

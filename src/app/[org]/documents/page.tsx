@@ -12,12 +12,21 @@ import { docTypeLabel } from '@/lib/doc-labels'
 import { SearchInput, Pagination } from '@/components/list-toolbar'
 import { Button } from '@/components/ui/button'
 import { DocumentUpload } from '@/components/documents/document-upload'
+import { FolderDownload } from '@/components/documents/folder-download'
 import { DocumentFilters } from '@/components/documents/document-filters'
 import { DocumentsList } from '@/components/documents/documents-list'
 import { FolderTree } from '@/components/documents/folder-tree'
-import { buildFolderTree, flattenFolders, folderSegments, SOCIETE_FOLDER } from '@/lib/folder-tree'
+import {
+  buildFolderTree,
+  flattenFolders,
+  folderSegments,
+  normalizeFolderPath,
+  parentFolder,
+  SOCIETE_FOLDER,
+} from '@/lib/folder-tree'
 import { Folder, ChevronRight, Home, TriangleAlert } from 'lucide-react'
 import Link from 'next/link'
+import { Suspense } from 'react'
 import { cn } from '@/lib/utils'
 
 export default async function DocumentsPage({
@@ -38,30 +47,47 @@ export default async function DocumentsPage({
   const dtype = typeof sp.type === 'string' ? sp.type : ''
   const sort = sp.sort === 'name' || sp.sort === 'size' ? sp.sort : 'recent'
   const page = Math.max(1, Number(sp.page ?? 1) || 1)
-  const [{ rows, count, pageSize }, folderRows, tenders, facets] = await Promise.all([
+  const requested = normalizeFolderPath(rawFolder)
+  // L'arbre des dossiers d'abord : la validation du chemin demandé en dépend
+  // (un dossier n'est accepté que s'il est peuplé ou descend d'un dossier
+  // peuplé — sinon la liste interrogerait un chemin sans rapport avec le
+  // fil d'Ariane affiché).
+  const folderRows = await listFolders(ctx)
+
+  // Arborescence reconstruite à partir des dossiers réellement peuplés.
+  const tree = buildFolderTree(folderRows)
+  const all = flattenFolders(tree)
+  const known = new Set(all.map((n) => n.path))
+  // Dossier accepté s'il est peuplé OU s'il descend d'un dossier peuplé —
+  // un sous-dossier fraîchement créé (bouton « Sous-dossier ») est vide et
+  // n'existe pas encore dans l'arbre : sans ça on rebondissait à la racine.
+  // Les nouvelles RACINES restent refusées (convention : Société + AO).
+  let folderOk = known.has(requested)
+  for (let p = parentFolder(requested); !folderOk && p; p = parentFolder(p)) {
+    if (known.has(p)) folderOk = true
+    if (p === '/') break
+  }
+  const folder = requested === '/' || folderOk ? requested : '/'
+
+  const [{ rows, count, pageSize }, tenders, facets] = await Promise.all([
     // Sans recherche ni vue sous-arbre : dossier exact. Avec l'un des deux :
     // sous-arbre du dossier courant (racine = toute l'organisation).
     listDocuments(ctx, {
       q,
       page,
       folder:
-        rawFolder === '/' ? (q || subtreeView ? undefined : '/') : rawFolder,
-      subtree: (subtreeView || !!q) && rawFolder !== '/',
+        folder === '/' ? (q || subtreeView ? undefined : '/') : folder,
+      subtree: (subtreeView || !!q) && folder !== '/',
       ext,
       dtype,
       sort,
     }),
-    listFolders(ctx),
     listTenders(ctx, { pageSize: 200 }),
-    listDocumentFacets(ctx, rawFolder),
+    listDocumentFacets(ctx, folder, subtreeView || !!q),
   ])
   const usage = await countDocumentUsage(ctx, rows.map((d) => d.id))
   const canEdit = ctx.role !== 'viewer'
 
-  // Arborescence reconstruite à partir des dossiers réellement peuplés.
-  const tree = buildFolderTree(folderRows)
-  const all = flattenFolders(tree)
-  const folder = rawFolder === '/' ? '/' : (all.find((n) => n.path === rawFolder)?.path ?? '/')
   const node = all.find((n) => n.path === folder)
   const subfolders = folder === '/' ? tree : (node?.children ?? [])
   const rootCount = folderRows.find((r) => r.path === '/')?.count ?? 0
@@ -80,8 +106,25 @@ export default async function DocumentsPage({
   const unfiledHere = unfiledRoots.has(folder)
 
   return (
-    <div className="flex h-full">
-      <aside className="w-64 shrink-0 overflow-y-auto border-r border-border p-3">
+    <div className="flex h-full flex-col md:flex-row">
+      {/* Mobile : l'arborescence se replie derrière un volet natif — la
+          colonne fixe w-64 écrasait tout le contenu sur téléphone. */}
+      <details className="border-b border-border px-3 py-2 md:hidden">
+        <summary className="cursor-pointer text-xs font-semibold uppercase text-muted-foreground">
+          Dossiers
+        </summary>
+        <div className="mt-2 max-h-64 overflow-y-auto">
+          <FolderTree
+            orgSlug={orgSlug}
+            nodes={tree}
+            current={folder}
+            rootCount={rootCount}
+            query={q}
+            unfiled={[...unfiledRoots]}
+          />
+        </div>
+      </details>
+      <aside className="hidden w-64 shrink-0 overflow-y-auto border-r border-border p-3 md:block">
         <p className="mb-2 px-2 text-xs font-semibold uppercase text-muted-foreground">
           Dossiers
         </p>
@@ -95,7 +138,7 @@ export default async function DocumentsPage({
         />
       </aside>
 
-      <div className="flex-1 space-y-4 overflow-y-auto p-6">
+      <div className="min-w-0 flex-1 space-y-4 overflow-y-auto p-4 sm:p-6">
         <nav className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
           <Link
             href={`/${orgSlug}/documents`}
@@ -122,7 +165,7 @@ export default async function DocumentsPage({
           ))}
         </nav>
 
-        <div className="flex items-center justify-between gap-4">
+        <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="min-w-0">
             <h1 className="truncate text-2xl font-semibold">
               {folder === '/' ? 'Documents' : segments[segments.length - 1]}
@@ -135,7 +178,16 @@ export default async function DocumentsPage({
                   : 'Fichiers privés — accès par liens signés'}
             </p>
           </div>
-          {canEdit && <DocumentUpload orgSlug={orgSlug} folder={folder} />}
+          <div className="flex shrink-0 items-center gap-2">
+            {canEdit && (
+              <FolderDownload
+                orgSlug={orgSlug}
+                folder={folder}
+                label={folder === '/' ? 'Tous les documents' : segments[segments.length - 1]}
+              />
+            )}
+            {canEdit && <DocumentUpload orgSlug={orgSlug} folder={folder} />}
+          </div>
         </div>
 
         {unfiledHere && (
@@ -154,10 +206,13 @@ export default async function DocumentsPage({
         {subfolders.length > 0 && (
           <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {subfolders.map((f) => (
-              <li key={f.path}>
+              <li
+                key={f.path}
+                className="flex items-center rounded-lg border border-border transition-colors hover:bg-accent/60"
+              >
                 <Link
                   href={`/${orgSlug}/documents?folder=${encodeURIComponent(f.path)}`}
-                  className="flex items-center gap-3 rounded-lg border border-border px-3 py-2.5 hover:bg-accent/60"
+                  className="flex min-w-0 flex-1 items-center gap-3 px-3 py-2.5"
                 >
                   <Folder className="size-4 shrink-0 text-muted-foreground" />
                   <span className="min-w-0 flex-1">
@@ -179,7 +234,23 @@ export default async function DocumentsPage({
                       {f.children.length > 0 && ` · ${f.children.length} sous-dossier(s)`}
                     </span>
                   </span>
-                  <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+                </Link>
+                {canEdit && (
+                  <span className="shrink-0 pr-1">
+                    <FolderDownload
+                      orgSlug={orgSlug}
+                      folder={f.path}
+                      label={f.name}
+                      iconOnly
+                    />
+                  </span>
+                )}
+                <Link
+                  href={`/${orgSlug}/documents?folder=${encodeURIComponent(f.path)}`}
+                  aria-label={`Ouvrir ${f.name}`}
+                  className="shrink-0 p-2 text-muted-foreground hover:text-foreground"
+                >
+                  <ChevronRight className="size-4" />
                 </Link>
               </li>
             ))}
@@ -187,20 +258,22 @@ export default async function DocumentsPage({
         )}
 
         <div className="flex flex-wrap items-center gap-3">
-          <SearchInput
-            placeholder={
-              folder === '/'
-                ? 'Rechercher un fichier…'
-                : 'Rechercher dans ce dossier…'
-            }
-          />
-          <DocumentFilters
-            exts={facets.exts}
-            types={facets.types.map((t) => ({
-              value: t,
-              label: docTypeLabel({ document_type: t }) ?? t,
-            }))}
-          />
+          <Suspense>
+            <SearchInput
+              placeholder={
+                folder === '/'
+                  ? 'Rechercher un fichier…'
+                  : 'Rechercher dans ce dossier…'
+              }
+            />
+            <DocumentFilters
+              exts={facets.exts}
+              types={facets.types.map((t) => ({
+                value: t,
+                label: docTypeLabel({ document_type: t }) ?? t,
+              }))}
+            />
+          </Suspense>
           {(q || ext || dtype || sort !== 'recent' || subtreeView) && (
             <span className="text-xs text-muted-foreground">
               {count} résultat{count > 1 ? 's' : ''}
@@ -267,7 +340,9 @@ export default async function DocumentsPage({
             folderBase={subtreeView || q ? folder : undefined}
           />
         )}
-        <Pagination count={count} page={page} pageSize={pageSize} />
+        <Suspense>
+          <Pagination count={count} page={page} pageSize={pageSize} />
+        </Suspense>
       </div>
     </div>
   )

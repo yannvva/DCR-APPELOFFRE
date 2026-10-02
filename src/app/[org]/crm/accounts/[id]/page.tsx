@@ -1,18 +1,21 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { ArrowLeft, Globe, Pencil, Phone } from 'lucide-react'
+import { ArrowLeft, Globe, MapPin, Pencil, Phone, Plus } from 'lucide-react'
 import { requireMembership } from '@/lib/dal/auth'
 import { getAccount, getEntityTags, listContacts, listOpportunities, listTags } from '@/lib/dal/crm'
 import { listTenders } from '@/lib/dal/tenders'
 import { getEntityDocuments } from '@/lib/dal/documents'
 import { listActivity } from '@/lib/dal/activity'
 import { AccountDialog } from '@/components/crm/account-dialog'
+import { ContactDialog } from '@/components/crm/contact-dialog'
+import { OpportunityDialog } from '@/components/crm/opportunity-dialog'
+import { CopyButton } from '@/components/copy-button'
 import { TagPicker } from '@/components/tag-picker'
 import { EntityDocuments } from '@/components/entity-documents'
 import { ActivityFeed } from '@/components/activity-feed'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { formatEuros, formatDate, formatRelative } from '@/lib/format'
+import { formatEuros, formatDate, formatRelative, isOverdue } from '@/lib/format'
 import { tenderPath } from '@/lib/slug'
 import { TENDER_STATUS_COLORS, TENDER_STATUS_LABELS } from '@/components/tenders/constants'
 import { cn } from '@/lib/utils'
@@ -31,7 +34,7 @@ export default async function AccountDetailPage({
   const [contacts, opportunities, tags, appliedTags, documents, activity, tenders] =
     await Promise.all([
       listContacts(ctx, { accountId: id, pageSize: 50 }),
-      listOpportunities(ctx).then((all) => all.filter((o) => o.account_id === id)),
+      listOpportunities(ctx, { accountId: id }),
       listTags(ctx),
       getEntityTags(ctx, 'account', id),
       getEntityDocuments(ctx, 'account', id),
@@ -40,12 +43,13 @@ export default async function AccountDetailPage({
     ])
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6 p-6">
+    <div className="mx-auto max-w-5xl space-y-6 p-4 sm:p-6">
       <div className="flex items-center gap-3">
         <Button
           variant="ghost"
           size="icon-sm"
           nativeButton={false}
+          aria-label="Retour aux entreprises"
           render={<Link href={`/${orgSlug}/crm/accounts`} />}
         >
           <ArrowLeft className="size-4" />
@@ -82,8 +86,25 @@ export default async function AccountDetailPage({
       <div className="grid gap-6 md:grid-cols-3">
         <div className="space-y-6 md:col-span-2">
           <section className="rounded-lg border border-border p-4">
-            <h2 className="mb-3 text-sm font-semibold">
-              Contacts <span className="text-muted-foreground">({contacts.count})</span>
+            <h2 className="mb-3 flex items-center justify-between text-sm font-semibold">
+              <span>
+                Contacts{' '}
+                <span className="font-normal text-muted-foreground">
+                  ({contacts.count})
+                </span>
+              </span>
+              {canEdit && (
+                <ContactDialog
+                  orgSlug={orgSlug}
+                  accounts={[{ id: account.id, name: account.name }]}
+                  defaultAccountId={account.id}
+                  trigger={
+                    <Button variant="ghost" size="xs">
+                      <Plus className="size-3.5" /> Ajouter
+                    </Button>
+                  }
+                />
+              )}
             </h2>
             {contacts.rows.length === 0 ? (
               <p className="text-sm text-muted-foreground">Aucun contact lié.</p>
@@ -105,8 +126,32 @@ export default async function AccountDetailPage({
           </section>
 
           <section className="rounded-lg border border-border p-4">
-            <h2 className="mb-3 text-sm font-semibold">
-              Opportunités <span className="text-muted-foreground">({opportunities.length})</span>
+            <h2 className="mb-3 flex items-center justify-between text-sm font-semibold">
+              <span>
+                Opportunités{' '}
+                <span className="font-normal text-muted-foreground">
+                  ({opportunities.length})
+                </span>
+              </span>
+              {canEdit && (
+                <OpportunityDialog
+                  orgSlug={orgSlug}
+                  accounts={[{ id: account.id, name: account.name }]}
+                  contacts={contacts.rows.map((c) => ({
+                    id: c.id,
+                    name:
+                      [c.first_name, c.last_name].filter(Boolean).join(' ') ||
+                      c.id,
+                    accountId: c.account_id,
+                  }))}
+                  defaultAccountId={account.id}
+                  trigger={
+                    <Button variant="ghost" size="xs">
+                      <Plus className="size-3.5" /> Ajouter
+                    </Button>
+                  }
+                />
+              )}
             </h2>
             {opportunities.length === 0 ? (
               <p className="text-sm text-muted-foreground">Aucune opportunité.</p>
@@ -137,8 +182,21 @@ export default async function AccountDetailPage({
           </section>
 
           <section className="rounded-lg border border-border p-4">
-            <h2 className="mb-3 text-sm font-semibold">
-              Appels d’offres <span className="text-muted-foreground">({tenders.count})</span>
+            <h2 className="mb-3 flex items-center justify-between text-sm font-semibold">
+              <span>
+                Appels d’offres{' '}
+                <span className="font-normal text-muted-foreground">
+                  ({tenders.count})
+                </span>
+              </span>
+              {tenders.count > 0 && (
+                <Link
+                  href={`/${orgSlug}/tenders?acheteur=${id}`}
+                  className="text-xs font-normal text-muted-foreground hover:text-foreground"
+                >
+                  Tout voir →
+                </Link>
+              )}
             </h2>
             {tenders.rows.length === 0 ? (
               <p className="text-sm text-muted-foreground">Aucun dossier pour cet acheteur.</p>
@@ -153,7 +211,15 @@ export default async function AccountDetailPage({
                       {t.title}
                     </Link>
                     <span className="flex shrink-0 items-center gap-2">
-                      <span className="text-xs text-muted-foreground tabular-nums">
+                      <span
+                        className={cn(
+                          'text-xs tabular-nums',
+                          isOverdue(t.response_deadline) &&
+                            ['detecte', 'analyse', 'en_preparation', 'a_deposer'].includes(t.status)
+                            ? 'font-medium text-destructive'
+                            : 'text-muted-foreground',
+                        )}
+                      >
                         {formatDate(t.response_deadline)}
                       </span>
                       <Badge
@@ -177,7 +243,7 @@ export default async function AccountDetailPage({
               entityId={id}
               documents={documents}
               canEdit={canEdit}
-              folder={`CRM — ${account.name}`.slice(0, 90)}
+              folder={`Société/CRM — ${account.name}`.slice(0, 90)}
             />
           </section>
         </div>
@@ -201,10 +267,31 @@ export default async function AccountDetailPage({
               )}
               {account.phone && (
                 <div className="flex items-center gap-2">
-                  <Phone className="size-3.5 text-muted-foreground" />
-                  <span>{account.phone}</span>
+                  <Phone className="size-3.5 shrink-0 text-muted-foreground" />
+                  <a href={`tel:${account.phone}`} className="min-w-0 truncate text-primary hover:underline">
+                    {account.phone}
+                  </a>
+                  <CopyButton value={account.phone} label="le téléphone" />
                 </div>
               )}
+              {account.address &&
+                (() => {
+                  const a = account.address
+                  const line = [
+                    [a.street, a.complement].filter(Boolean).join(', '),
+                    [a.postal_code ?? a.zip, a.city].filter(Boolean).join(' '),
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')
+                  return line ? (
+                    <div className="flex items-start gap-2">
+                      <MapPin className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
+                      <span className="min-w-0 text-muted-foreground" title="Reprise dans les DC1/DC2 générés">
+                        {line}
+                      </span>
+                    </div>
+                  ) : null
+                })()}
               <div className="text-xs text-muted-foreground">
                 Créée le {formatDate(account.created_at)} — mise à jour{' '}
                 {formatRelative(account.updated_at)}

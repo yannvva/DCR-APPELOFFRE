@@ -151,6 +151,9 @@ export function DatasheetPanel({
   const [researchProgress, setResearchProgress] = useState<string | null>(null)
   // Pipeline enchaîné : 0 dépouillage, 1 recherche, 2 PDF, 3 livrables.
   const [pipelineStep, setPipelineStep] = useState<number | null>(null)
+  // Garde synchrone contre le double-clic : `pipelineStep` ne remonte qu'au
+  // rendu suivant, deux clics dans le même tick passeraient le test d'entrée.
+  const pipelineBusy = useRef(false)
   const [pdfFilter, setPdfFilter] = useState('')
   // Onglet courant conservé au router.refresh() (le key={doneChapters}
   // renvoyait au 1er onglet après chaque recherche).
@@ -257,48 +260,6 @@ export function DatasheetPanel({
     })
   }
 
-  function extract() {
-    if (!run) return
-    setPendingStep({
-      title: `Dépouillage du DCE — ${run.lot_label}`,
-      steps: [
-        'Chargement des pièces du lot',
-        'Extraction du texte (PDF, DOCX, XLSX)',
-        'Détection des exigences produits et chapitres',
-      ],
-    })
-    startTransition(async () => {
-      try {
-        const res = await extractRunBrief(orgSlug, tenderId, run.id)
-        if (res.error) {
-          toast.error(res.error)
-          return
-        }
-        toast.success(
-          `DCE dépouillé : ${res.data?.chapters.length ?? 0} chapitre(s) détecté(s)`,
-        )
-        router.refresh()
-      } finally {
-        setPendingStep(null)
-      }
-    })
-  }
-
-  async function researchAll() {
-    if (!run) return
-    setResearchProgress('démarrage…')
-    for (const code of chapterCodes.filter((c) => !run.result?.[c])) {
-      setResearchProgress(`chapitre ${code}…`)
-      const res = await researchRunChapter(orgSlug, tenderId, run.id, code)
-      if (res.error) {
-        toast.error(`${code} : ${res.error}`)
-        break
-      }
-      router.refresh()
-    }
-    setResearchProgress(null)
-  }
-
   function researchOne(code: string) {
     setPendingStep({
       title: `Recherche documentaire — chapitre ${code}`,
@@ -325,114 +286,26 @@ export function DatasheetPanel({
     })
   }
 
-  /** Téléchargement des PDF : un agent cherche d'abord les URL officielles
-   *  des documents restés sans lien (seconde passe), puis tous les PDF sont
-   *  récupérés — couverture maximale en un clic. */
-  function downloadAll() {
-    if (!run) return
-    // Seules les fiches fabricants peuvent être trouvées en ligne : les
-    // prescriptions CCTP / normes (DTU, NF EN…) n'ont pas de PDF public.
-    const missingCount = productDocs.filter((d) => !d.url).length
-    const missing = missingCount > 0
-    const stepLabel = (toFetch: number) =>
-      `Téléchargement de ${toFetch} PDF (6 en parallèle)`
-    setPendingStep({
-      title: 'Téléchargement des PDF fabricants',
-      steps: [
-        ...(missing
-          ? [
-              `Recherche ciblée des URL officielles manquantes — ${missingCount} fiche${missingCount > 1 ? 's' : ''} fabricant sans URL (agent web)`,
-            ]
-          : []),
-        stepLabel(withUrl.length),
-        'Stockage et liaison au dossier',
-        'Vérification des téléchargements',
-      ],
-    })
-    startTransition(async () => {
-      try {
-        let found = 0
-        let stillMissing = 0
-        let prescriptive = 0
-        if (missing) {
-          const s = await findMissingDocUrls(orgSlug, tenderId, run.id)
-          if (s.error) {
-            toast.error(`Recherche complémentaire : ${s.error}`)
-          } else {
-            found = s.data?.found ?? 0
-            stillMissing = s.data?.missing ?? 0
-            prescriptive = s.data?.prescriptive ?? 0
-          }
-          // Le compte réel à télécharger inclut les URL retrouvées.
-          setPendingStep({
-            title: 'Téléchargement des PDF fabricants',
-            steps: [
-              `Recherche ciblée des URL manquantes terminée — ${found} retrouvée${found > 1 ? 's' : ''}, ${stillMissing} restante${stillMissing > 1 ? 's' : ''} sans URL`,
-              stepLabel(withUrl.length + found),
-              'Stockage et liaison au dossier',
-              'Vérification des téléchargements',
-            ],
-          })
-        }
-        const res = await downloadRunPdfs(orgSlug, tenderId, run.id)
-        if (res.error) {
-          toast.error(res.error)
-          return
-        }
-        toast.success(
-          `${res.data?.ok ?? 0} PDF téléchargé(s)` +
-            (found ? ` — ${found} fiche(s) retrouvée(s) par l'agent` : '') +
-            (res.data?.failed ? `, ${res.data.failed} en échec` : '') +
-            (stillMissing ? `, ${stillMissing} fiche(s) fabricant introuvable(s)` : '') +
-            (prescriptive
-              ? `, ${prescriptive} prescription(s) CCTP/norme à joindre`
-              : ''),
-        )
-        router.refresh()
-      } finally {
-        setPendingStep(null)
-      }
-    })
-  }
-
-  function exportDeliverables() {
-    if (!run) return
-    setPendingStep({
-      title: 'Génération du classeur et de l’arborescence',
-      steps: [
-        'Classeur Excel de conformité',
-        'Arborescence et README de livraison',
-        'Assemblage du ZIP et rangement',
-      ],
-    })
-    startTransition(async () => {
-      try {
-        const res = await exportRunDeliverables(orgSlug, tenderId, run.id)
-        if (res.error) {
-          toast.error(res.error)
-          return
-        }
-        toast.success(`Livrables générés : ${res.data?.files.join(', ')}`)
-        if (res.data?.failed.length) {
-          toast.warning(
-            `Livrable(s) en échec : ${res.data.failed.join(', ')}`,
-          )
-        }
-        router.refresh()
-      } finally {
-        setPendingStep(null)
-      }
-    })
-  }
+  // Première étape incomplète du run — « Tout lancer » reprend là, sans
+  // refaire le travail déjà produit (le dépouillage coûte plusieurs minutes).
+  const firstIncompleteStep = !chapterCodes.length
+    ? 0
+    : doneChapters.length < chapterCodes.length
+      ? 1
+      : allDocs.some((d) => !d.downloaded && !d.document_id)
+        ? 2
+        : 3
 
   /**
-   * Pipeline complet en un clic : dépouillage → recherche web (chaque
-   * chapitre, séquentiel) → téléchargement des PDF → classeur + arborescence.
-   * Les étapes s'enchaînent sans intervention ; chaque étape affiche sa
-   * progression et un échec stoppe la chaîne en indiquant où.
+   * Pipeline enchaîné « petit à petit » : chaque bouton d'étape relance son
+   * étape PUIS enchaîne les suivantes jusqu'aux livrables (dépouillage →
+   * recherche par chapitre → URL manquantes + PDF → classeur + ZIP).
+   * « Tout lancer » reprend à la première étape incomplète. Un échec stoppe
+   * la chaîne en indiquant l'étape fautive ; relancer reprend au même point.
    */
-  async function runPipeline() {
-    if (!run || pipelineStep != null) return
+  async function runPipeline(fromStep: number) {
+    if (!run || pipelineStep != null || pipelineBusy.current) return
+    pipelineBusy.current = true
     const stepTitles = [
       'Dépouillage du DCE',
       'Recherche web par chapitre',
@@ -441,56 +314,83 @@ export function DatasheetPanel({
     ]
     // Compteur local : `pipelineStep` (state) resterait figé dans le catch.
     let step = 0
+    // Chapitres issus du dépouillage si l'étape 0 vient de tourner — le prop
+    // `run` reste figé jusqu'au refresh.
+    let chapters = chapterCodes
     try {
-      setPipelineStep(step)
-      const brief = await extractRunBrief(orgSlug, tenderId, run.id)
-      if (brief.error) throw new Error(brief.error)
-      const chapters = brief.data?.chapters ?? []
-      if (!chapters.length)
-        throw new Error('Aucun chapitre détecté dans le DCE.')
-
-      step = 1
-      setPipelineStep(step)
-      // Chapitres déjà recherchés conservés par le dépouillage → on ne les
-      // refait pas (relancer un chapitre à la main reste possible).
-      const alreadyDone = new Set(Object.keys(run.result ?? {}))
-      const toResearch = chapters.filter((c) => !alreadyDone.has(c))
-      let i = 0
-      for (const code of toResearch) {
-        i += 1
-        setResearchProgress(`chapitre ${code} — ${i}/${toResearch.length}`)
-        const r = await researchRunChapter(orgSlug, tenderId, run.id, code)
-        if (r.error) throw new Error(`Chapitre ${code} : ${r.error}`)
+      // 0 — dépouillage (forcé par le bouton 1, ou si aucun chapitre).
+      if (fromStep === 0 || !chapters.length) {
+        step = 0
+        setPipelineStep(0)
+        const brief = await extractRunBrief(orgSlug, tenderId, run.id)
+        if (brief.error) throw new Error(brief.error)
+        chapters = brief.data?.chapters ?? []
+        if (!chapters.length)
+          throw new Error('Aucun chapitre détecté dans le DCE.')
         router.refresh()
       }
-      setResearchProgress(null)
 
-      step = 2
-      setPipelineStep(step)
-      // Seconde passe : l'agent cherche les URL officielles des documents
-      // restés sans lien avant le téléchargement (no-op si rien à chercher).
-      const extra = await findMissingDocUrls(orgSlug, tenderId, run.id)
-      if (extra.error) toast.error(`Recherche complémentaire : ${extra.error}`)
-      router.refresh()
-      const dl = await downloadRunPdfs(orgSlug, tenderId, run.id)
-      if (dl.error) throw new Error(dl.error)
+      // 1 — recherche web : seuls les chapitres sans résultat sont traités
+      // (une re-cherche conserve les drapeaux de téléchargement côté serveur).
+      if (fromStep <= 1) {
+        step = 1
+        setPipelineStep(1)
+        const alreadyDone = new Set(Object.keys(run.result ?? {}))
+        const queue = chapters.filter((c) => !alreadyDone.has(c))
+        const total = queue.length
+        // 2 chapitres en parallèle : chaque agent dure 1-3 min — borné pour
+        // rester sous les quotas des moteurs de recherche partagés.
+        let done = 0
+        const failures: string[] = []
+        const worker = async () => {
+          for (;;) {
+            const code = queue.shift()
+            if (!code || failures.length) return
+            const r = await researchRunChapter(orgSlug, tenderId, run.id, code)
+            if (r.error) {
+              failures.push(`Chapitre ${code} : ${r.error}`)
+              return
+            }
+            done += 1
+            setResearchProgress(`${done}/${total} chapitre(s) recherché(s)`)
+            router.refresh()
+          }
+        }
+        setResearchProgress(`0/${total} chapitre(s) recherché(s)`)
+        await Promise.all([worker(), worker()])
+        setResearchProgress(null)
+        if (failures.length) throw new Error(failures[0])
+      }
 
+      // 2 — seconde passe d'URL puis téléchargement des PDF (le serveur
+      // ignore ceux déjà livrés / réutilisés de la bibliothèque).
+      if (fromStep <= 2) {
+        step = 2
+        setPipelineStep(2)
+        const extra = await findMissingDocUrls(orgSlug, tenderId, run.id)
+        if (extra.error) toast.error(`Recherche complémentaire : ${extra.error}`)
+        router.refresh()
+        const dl = await downloadRunPdfs(orgSlug, tenderId, run.id)
+        if (dl.error) throw new Error(dl.error)
+      }
+
+      // 3 — livrables : export idempotent (les livrables obsolètes du lot
+      // sont remplacés, les PDF téléchargés sont préservés).
       step = 3
-      setPipelineStep(step)
+      setPipelineStep(3)
       const ex = await exportRunDeliverables(orgSlug, tenderId, run.id)
       if (ex.error) throw new Error(ex.error)
 
-      toast.success(
-        `Pipeline terminé — ${dl.data?.ok ?? 0} PDF, livrables : ${ex.data?.files.join(', ')}`,
-      )
+      toast.success(`Pipeline terminé — livrables : ${ex.data?.files.join(', ')}`)
       if (ex.data?.failed.length) {
         toast.warning(`Livrable(s) en échec : ${ex.data.failed.join(', ')}`)
       }
     } catch (e) {
       toast.error(
-        `Pipeline interrompu à l’étape ${step + 1} (${stepTitles[step]}) : ${e instanceof Error ? e.message : 'erreur'}`,
+        `Pipeline interrompu à l’étape ${step + 1} (${stepTitles[step]}) : ${e instanceof Error ? e.message : 'erreur'} — relancez pour reprendre au même point`,
       )
     } finally {
+      pipelineBusy.current = false
       setPipelineStep(null)
       setResearchProgress(null)
       router.refresh()
@@ -546,6 +446,7 @@ export function DatasheetPanel({
           <Select
             value={run?.id ?? ''}
             onValueChange={(v) => setRunId(v ?? '')}
+            disabled={pipelineStep != null}
           >
             <SelectTrigger className="w-72">
               <SelectValue placeholder="Dossier de fiches…" />
@@ -572,7 +473,11 @@ export function DatasheetPanel({
           <Dialog open={createOpen} onOpenChange={setCreateOpen}>
             <DialogTrigger
               render={
-                <Button size="sm" variant={runs.length ? 'outline' : 'default'}>
+                <Button
+                  size="sm"
+                  variant={runs.length ? 'outline' : 'default'}
+                  disabled={pipelineStep != null}
+                >
                   <Plus className="size-4" /> Nouveau dossier de fiches
                 </Button>
               }
@@ -681,7 +586,7 @@ export function DatasheetPanel({
             <Button
               size="sm"
               variant="outline"
-              disabled={pending}
+              disabled={pending || pipelineStep != null}
               onClick={() => importRef.current?.click()}
             >
               <Upload className="size-4" /> Importer un livrable
@@ -693,6 +598,7 @@ export function DatasheetPanel({
                     variant="ghost"
                     size="icon-sm"
                     aria-label="Supprimer le dossier"
+                    disabled={pipelineStep != null}
                   >
                     <Trash2 className="text-destructive size-4" />
                   </Button>
@@ -708,7 +614,10 @@ export function DatasheetPanel({
                 </AlertDialogHeader>
                 <AlertDialogFooter>
                   <AlertDialogCancel>Annuler</AlertDialogCancel>
-                  <AlertDialogAction onClick={removeRun} disabled={pending}>
+                  <AlertDialogAction
+                    onClick={removeRun}
+                    disabled={pending || pipelineStep != null}
+                  >
                     Supprimer
                   </AlertDialogAction>
                 </AlertDialogFooter>
@@ -735,24 +644,30 @@ export function DatasheetPanel({
               {canEdit && (
                 <Button
                   size="sm"
-                  onClick={runPipeline}
+                  onClick={() => runPipeline(firstIncompleteStep)}
                   disabled={pipelineStep != null || pending || !!researchProgress}
+                  title="Reprend à la première étape incomplète et enchaîne jusqu'aux livrables"
                 >
                   {pipelineStep != null ? (
                     <Loader2 className="size-4 animate-spin" />
                   ) : (
                     <BookOpenCheck className="size-4" />
                   )}
-                  Tout lancer
+                  {firstIncompleteStep === 0
+                    ? 'Tout lancer'
+                    : firstIncompleteStep === 3
+                      ? 'Régénérer les livrables'
+                      : 'Continuer'}
                 </Button>
               )}
               <Button
                 size="sm"
                 variant={run.status === 'draft' ? 'default' : 'outline'}
-                onClick={extract}
-                disabled={!canEdit || pending || pipelineStep != null}
+                onClick={() => runPipeline(0)}
+                disabled={!canEdit || pending || pipelineStep != null || !!researchProgress}
+                title="Re-dépouille le DCE puis enchaîne recherche, PDF et livrables"
               >
-                {pending && run.status === 'draft' ? (
+                {pipelineStep === 0 ? (
                   <Loader2 className="size-4 animate-spin" />
                 ) : (
                   <BookOpenCheck className="size-4" />
@@ -762,7 +677,7 @@ export function DatasheetPanel({
               <Button
                 size="sm"
                 variant="outline"
-                onClick={researchAll}
+                onClick={() => runPipeline(1)}
                 disabled={
                   !canEdit ||
                   !chapterCodes.length ||
@@ -770,8 +685,9 @@ export function DatasheetPanel({
                   !!researchProgress ||
                   pipelineStep != null
                 }
+                title="Recherche les chapitres manquants puis enchaîne PDF et livrables"
               >
-                {researchProgress ? (
+                {pipelineStep === 1 || researchProgress ? (
                   <Loader2 className="size-4 animate-spin" />
                 ) : (
                   <Globe className="size-4" />
@@ -786,7 +702,7 @@ export function DatasheetPanel({
               <Button
                 size="sm"
                 variant="outline"
-                onClick={downloadAll}
+                onClick={() => runPipeline(2)}
                 disabled={
                   !canEdit ||
                   !allDocs.length ||
@@ -795,12 +711,14 @@ export function DatasheetPanel({
                   pipelineStep != null
                 }
                 title={
-                  allDocs.length - withUrl.length > 0
-                    ? "Un agent recherche d'abord les URL officielles des documents sans lien, puis télécharge tout"
-                    : undefined
+                  "Recherche les URL manquantes, télécharge les PDF puis régénère les livrables"
                 }
               >
-                <Download className="size-4" />
+                {pipelineStep === 2 ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Download className="size-4" />
+                )}
                 3. Télécharger les PDF
                 <Badge variant="secondary" className="text-[10px]">
                   {delivered.length}/{allDocs.length}
@@ -809,7 +727,7 @@ export function DatasheetPanel({
               <Button
                 size="sm"
                 variant="outline"
-                onClick={exportDeliverables}
+                onClick={() => runPipeline(3)}
                 disabled={
                   !canEdit ||
                   !Object.keys(run.result).length ||
@@ -817,8 +735,13 @@ export function DatasheetPanel({
                   !!researchProgress ||
                   pipelineStep != null
                 }
+                title="Régénère le classeur Excel et l'arborescence ZIP"
               >
-                <Table2 className="size-4" />
+                {pipelineStep === 3 ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Table2 className="size-4" />
+                )}
                 4. Classeur + arborescence
               </Button>
               {pipelineStep != null ? (

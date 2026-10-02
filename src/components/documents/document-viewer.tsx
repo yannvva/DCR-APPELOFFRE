@@ -146,7 +146,7 @@ export function DocumentViewer({
         if (!v) onClose()
       }}
     >
-      <DialogContent className="flex h-[85vh] flex-col gap-3 sm:max-w-5xl">
+      <DialogContent className="flex h-[85dvh] flex-col gap-3 overflow-hidden sm:max-w-5xl">
         <DialogHeader className="flex-row items-center gap-2 pr-8">
           {canPrev && (
             <Button
@@ -208,6 +208,7 @@ export function DocumentViewer({
               <Button
                 variant="outline"
                 size="sm"
+                className="max-w-full"
                 nativeButton={false}
                 render={
                   <a
@@ -218,8 +219,8 @@ export function DocumentViewer({
                   />
                 }
               >
-                <Download className="size-4" />
-                Télécharger {doc?.name}
+                <Download className="size-4 shrink-0" />
+                <span className="min-w-0 truncate">Télécharger {doc?.name}</span>
               </Button>
             </div>
           )}

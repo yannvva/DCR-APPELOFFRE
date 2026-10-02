@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
 import {
   ArrowLeft,
+  CircleCheck,
   ClipboardList,
   ExternalLink,
   FileDown,
@@ -163,7 +164,13 @@ export default async function TenderDetailPage({
   // Alertes checklist regroupées : elles doublonnent l'onglet Checklist —
   // on garde visibles les alertes transverses (deadline, visite, lots…).
   const checklistAlerts = alerts.filter((a) => a.check_key.startsWith('checklist_'))
-  const otherAlerts = alerts.filter((a) => !a.check_key.startsWith('checklist_'))
+  const otherAlerts = alerts.filter(
+    (a) =>
+      !a.check_key.startsWith('checklist_') &&
+      // La bannière « Prochaine étape » porte déjà le message quand le délai
+      // est dépassé — ne pas répéter la même alerte bloquante en dessous.
+      !(a.check_key === 'deadline_passed' && overdue && !closed),
+  )
 
   // Prochaine étape la plus utile, par ordre de criticité
   const hasDceDocs = documents.some((d) => d.category === 'dce')
@@ -230,20 +237,21 @@ export default async function TenderDetailPage({
   )
 
   return (
-    <div className="space-y-5 p-6">
+    <div className="space-y-5 p-4 sm:p-6">
       {/* Header */}
       <div className="flex flex-wrap items-center gap-3">
         <Button
           variant="ghost"
           size="icon-sm"
           nativeButton={false}
+          aria-label="Retour aux appels d’offres"
           render={<Link href={`/${orgSlug}/tenders`} />}
         >
           <ArrowLeft className="size-4" />
         </Button>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-baseline gap-2">
-            <h1 className="truncate text-2xl font-semibold">{tender.title}</h1>
+            <h1 className="min-w-0 flex-1 basis-full text-xl font-semibold leading-snug sm:basis-auto sm:text-2xl">{tender.title}</h1>
             {tender.reference && (
               <span className="text-sm text-muted-foreground">réf. {tender.reference}</span>
             )}
@@ -281,16 +289,27 @@ export default async function TenderDetailPage({
         >
           {TENDER_STATUS_LABELS[tender.status]}
         </Badge>
-        <span
-          className={cn(
-            'text-sm font-semibold tabular-nums',
-            readiness.ready
-              ? 'text-emerald-600 dark:text-emerald-300'
-              : 'text-amber-600 dark:text-amber-300',
-          )}
-        >
-          {readiness.pct} % conforme
-        </span>
+        <div className="w-28" title={`${readiness.validated}/${readiness.required} pièces obligatoires validées`}>
+          <p
+            className={cn(
+              'text-sm font-semibold tabular-nums',
+              readiness.ready
+                ? 'text-emerald-600 dark:text-emerald-300'
+                : 'text-amber-600 dark:text-amber-300',
+            )}
+          >
+            {readiness.pct} % conforme
+          </p>
+          <div className="mt-1 h-1 overflow-hidden rounded-full bg-muted">
+            <div
+              className={cn(
+                'h-full rounded-full transition-all',
+                readiness.ready ? 'bg-emerald-500' : 'bg-amber-500',
+              )}
+              style={{ width: `${readiness.pct}%` }}
+            />
+          </div>
+        </div>
         {canEdit && <TenderStatusSelect orgSlug={orgSlug} tenderId={id} status={tender.status} />}
         <Button
           variant="outline"
@@ -433,10 +452,9 @@ export default async function TenderDetailPage({
           )}
           {/* À retenir — éléments indispensables issus de l'analyse du DCE */}
           {doneAnalysis?.result ? (
-            <ARetenirCard
-              analysis={normalizeAnalysis(doneAnalysis.result)}
-              exportHref={`/print${tenderPath(orgSlug, tender)}?auto=1`}
-            />
+            // Pas d'exportHref ici : « Export dossier (PDF) » est déjà dans
+            // l'en-tête de la page.
+            <ARetenirCard analysis={normalizeAnalysis(doneAnalysis.result)} />
           ) : null}
 
           <div className="grid gap-4 lg:grid-cols-2">
@@ -450,6 +468,7 @@ export default async function TenderDetailPage({
                 <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5">
                   {(
                     [
+                      ['Pilote', tender.responsible?.full_name ?? null],
                       ['Publication', tender.published_at ? formatDate(tender.published_at) : null],
                       [
                         'Questions avant le',
@@ -600,9 +619,10 @@ export default async function TenderDetailPage({
             </CardContent>
           </Card>
 
-          <section>
-            <h2 className="mb-2 text-sm font-semibold">Alertes de conformité</h2>
-            <div className="space-y-3">
+          {checklistAlerts.length + otherAlerts.length > 0 ? (
+            <section>
+              <h2 className="mb-2 text-sm font-semibold">Alertes de conformité</h2>
+              <div className="space-y-3">
               {checklistAlerts.length > 0 && (
                 <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/30 px-4 py-3 text-sm">
                   <ClipboardList className="size-4 shrink-0 text-muted-foreground" />
@@ -615,8 +635,16 @@ export default async function TenderDetailPage({
                 </div>
               )}
               <AlertsPanel orgSlug={orgSlug} tenderId={id} alerts={otherAlerts} canEdit={canEdit} />
-            </div>
-          </section>
+              </div>
+            </section>
+          ) : (
+            // État neutre : aucun encart alarmant quand tout est conforme —
+            // une ligne discrète suffit, la page reste aérée.
+            <p className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-4 py-2.5 text-sm text-emerald-700 dark:text-emerald-300">
+              <CircleCheck className="size-4 shrink-0" />
+              Aucune alerte — le dossier passe les contrôles automatiques.
+            </p>
+          )}
         </TabsContent>
 
         <TabsContent value="checklist" className="mt-4">

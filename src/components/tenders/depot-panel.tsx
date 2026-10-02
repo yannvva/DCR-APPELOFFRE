@@ -122,7 +122,7 @@ export function DepotPanel({
       {canEdit && (
         <section className="space-y-3 rounded-lg border border-border p-4">
           <h3 className="text-sm font-semibold">Enregistrer un dépôt</h3>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label htmlFor="dep-platform">Plateforme de dépôt</Label>
               <Input
@@ -229,7 +229,7 @@ export function DepotPanel({
         )}
         {canEdit && (
           <div className="space-y-3">
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid gap-3 sm:grid-cols-3">
               <Select value={outcome} onValueChange={(v) => setOutcome(v ?? '')}>
                 <SelectTrigger>
                   <SelectValue placeholder="Résultat…" />

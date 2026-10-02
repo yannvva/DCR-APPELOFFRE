@@ -43,6 +43,7 @@ import {
   runComplianceChecks,
   setChecklistItemStatus,
 } from '@/app/actions/tenders'
+import { setDocumentSigned } from '@/app/actions/documents'
 import { checklistItemSchema } from '@/lib/validation/domain'
 import {
   CHECKLIST_CATEGORY_LABELS,
@@ -374,11 +375,43 @@ export function ChecklistPanel({
                     {item.document && (
                       <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
                         <FileText className="size-3" />
-                        {item.document.name}
+                        <span className="truncate">{item.document.name}</span>
                         {expired && <span className="text-destructive"> — expiré</span>}
-                        {item.requires_signature && !item.document.is_signed && (
-                          <span className="text-amber-600"> — non signé</span>
-                        )}
+                        {item.requires_signature &&
+                          (!item.document.is_signed ? (
+                            canEdit ? (
+                              // La signature conditionne la validation : le
+                              // libellé est l'action — un clic marque la pièce
+                              // signée au lieu d'échouer au moment « valider ».
+                              <button
+                                type="button"
+                                disabled={pending}
+                                title="La pièce jointe a été signée — cliquer pour l'enregistrer"
+                                className="shrink-0 font-medium text-amber-600 underline decoration-dotted underline-offset-2 hover:text-amber-700 dark:text-amber-400"
+                                onClick={() =>
+                                  act(
+                                    () =>
+                                      setDocumentSigned(
+                                        orgSlug,
+                                        item.document!.id,
+                                        true,
+                                        tenderId,
+                                      ),
+                                    'Pièce marquée signée — validation possible',
+                                  )
+                                }
+                              >
+                                — non signée · marquer signée ?
+                              </button>
+                            ) : (
+                              <span className="shrink-0 text-amber-600"> — non signée</span>
+                            )
+                          ) : (
+                            <span className="shrink-0 text-emerald-600 dark:text-emerald-400">
+                              {' '}
+                              — signée
+                            </span>
+                          ))}
                       </p>
                     )}
                   </div>
@@ -386,7 +419,7 @@ export function ChecklistPanel({
                   {canEdit && (
                     <div className="flex items-center gap-2">
                       <DocumentPicker
-                        className="w-64"
+                        className="w-64 max-w-full"
                         documents={documents}
                         value={item.document_id}
                         currentLabel={item.document?.name}

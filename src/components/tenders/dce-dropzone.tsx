@@ -1,6 +1,7 @@
 'use client'
 
 import { useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { unzipSync } from 'fflate'
 import { toast } from 'sonner'
 import { FileWarning, FolderInput, Loader2, UploadCloud } from 'lucide-react'
@@ -216,6 +217,7 @@ export function DceDropzone({
   tenderId: string
   canEdit: boolean
 }) {
+  const router = useRouter()
   const inputRef = useRef<HTMLInputElement>(null)
   const [dragOver, setDragOver] = useState(false)
   const [running, setRunning] = useState(false)
@@ -331,6 +333,9 @@ export function DceDropzone({
 
     setResult(agg)
     setRunning(false)
+    // Les pièces importées remontent dans l'onglet Documents et alimentent
+    // l'analyse — sans refresh, les props de la page restent périmées.
+    router.refresh()
     const n = agg.imported.length
     if (n) {
       toast.success(`${n} pièce${n > 1 ? 's' : ''} rangée${n > 1 ? 's' : ''} dans le DCE`)

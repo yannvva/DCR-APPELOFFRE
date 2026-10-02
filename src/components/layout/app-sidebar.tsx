@@ -1,6 +1,6 @@
 'use client'
 
-import { useSyncExternalStore } from 'react'
+import { useState, useSyncExternalStore } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
@@ -23,6 +23,7 @@ import {
   Building2,
   PanelLeftClose,
   PanelLeftOpen,
+  Menu,
 } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import {
@@ -34,6 +35,12 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import {
+  Sheet,
+  SheetContent,
+  SheetTitle,
+  SheetTrigger,
+} from '@/components/ui/sheet'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Separator } from '@/components/ui/separator'
 import { cn } from '@/lib/utils'
@@ -74,41 +81,32 @@ function subscribeSidebar(cb: () => void) {
   }
 }
 
-export function AppSidebar({
-  org,
-  orgs,
-  role,
-  user,
-}: {
+type SidebarContentProps = {
   org: Organization
   orgs: OrgWithRole[]
   role: MembershipRole
   user: { email: string; fullName: string }
-}) {
+  collapsed: boolean
+  onToggleCollapsed?: () => void
+  /** Appelé après clic sur un lien — ferme le drawer mobile. */
+  onNavigate?: () => void
+}
+
+function SidebarContent({
+  org,
+  orgs,
+  role,
+  user,
+  collapsed,
+  onToggleCollapsed,
+  onNavigate,
+}: SidebarContentProps) {
   const pathname = usePathname()
   const { theme, setTheme } = useTheme()
-  // Préférence persistée dans localStorage — useSyncExternalStore évite le
-  // mismatch SSR (snapshot serveur = étendu) et synchronise entre onglets.
-  const collapsed = useSyncExternalStore(
-    subscribeSidebar,
-    () => localStorage.getItem(SIDEBAR_KEY) === '1',
-    () => false,
-  )
-
-  function toggleCollapsed() {
-    localStorage.setItem(SIDEBAR_KEY, collapsed ? '0' : '1')
-    window.dispatchEvent(new Event(SIDEBAR_EVENT))
-  }
-
   const initials = (user.fullName || user.email).slice(0, 2).toUpperCase()
 
   return (
-    <aside
-      className={cn(
-        'flex shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground transition-[width] duration-200',
-        collapsed ? 'w-16' : 'w-64',
-      )}
-    >
+    <>
       <div className={cn('flex items-center p-3', collapsed && 'flex-col gap-2')}>
         <DropdownMenu>
           <DropdownMenuTrigger
@@ -148,19 +146,21 @@ export function AppSidebar({
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        <button
-          type="button"
-          onClick={toggleCollapsed}
-          title={collapsed ? 'Ouvrir le menu' : 'Réduire le menu'}
-          aria-label={collapsed ? 'Ouvrir le menu' : 'Réduire le menu'}
-          className="shrink-0 rounded-md p-2 text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-        >
-          {collapsed ? (
-            <PanelLeftOpen className="size-4" />
-          ) : (
-            <PanelLeftClose className="size-4" />
-          )}
-        </button>
+        {onToggleCollapsed && (
+          <button
+            type="button"
+            onClick={onToggleCollapsed}
+            title={collapsed ? 'Ouvrir le menu' : 'Réduire le menu'}
+            aria-label={collapsed ? 'Ouvrir le menu' : 'Réduire le menu'}
+            className="shrink-0 rounded-md p-2 text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+          >
+            {collapsed ? (
+              <PanelLeftOpen className="size-4" />
+            ) : (
+              <PanelLeftClose className="size-4" />
+            )}
+          </button>
+        )}
       </div>
 
       <div className="px-3 pb-2">
@@ -193,6 +193,7 @@ export function AppSidebar({
               key={key}
               href={href}
               title={collapsed ? label : undefined}
+              onClick={onNavigate}
               className={cn(
                 'flex items-center gap-2 rounded-md px-2 py-1.5 text-sm',
                 collapsed && 'justify-center',
@@ -257,6 +258,103 @@ export function AppSidebar({
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
-    </aside>
+    </>
+  )
+}
+
+export function AppSidebar({
+  org,
+  orgs,
+  role,
+  user,
+}: {
+  org: Organization
+  orgs: OrgWithRole[]
+  role: MembershipRole
+  user: { email: string; fullName: string }
+}) {
+  // Préférence persistée dans localStorage — useSyncExternalStore évite le
+  // mismatch SSR (snapshot serveur = étendu) et synchronise entre onglets.
+  const collapsed = useSyncExternalStore(
+    subscribeSidebar,
+    () => localStorage.getItem(SIDEBAR_KEY) === '1',
+    () => false,
+  )
+  const [mobileOpen, setMobileOpen] = useState(false)
+
+  function toggleCollapsed() {
+    localStorage.setItem(SIDEBAR_KEY, collapsed ? '0' : '1')
+    window.dispatchEvent(new Event(SIDEBAR_EVENT))
+  }
+
+  return (
+    <>
+      {/* Mobile : barre supérieure + navigation en drawer. Sans ça, la
+          sidebar w-64 occupait ~70 % du viewport téléphone. */}
+      <div className="sticky top-0 z-40 flex items-center gap-1 border-b border-border bg-background px-2 py-1.5 lg:hidden">
+        <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
+          <SheetTrigger
+            className="rounded-md p-2 text-muted-foreground hover:bg-accent hover:text-foreground"
+            aria-label="Ouvrir le menu"
+          >
+            <Menu className="size-5" />
+          </SheetTrigger>
+          <SheetContent
+            side="left"
+            className="w-72 gap-0 border-sidebar-border bg-sidebar p-0 text-sidebar-foreground"
+          >
+            <SheetTitle className="sr-only">Navigation</SheetTitle>
+            <div className="flex h-full flex-col overflow-y-auto">
+              <SidebarContent
+                org={org}
+                orgs={orgs}
+                role={role}
+                user={user}
+                collapsed={false}
+                onNavigate={() => setMobileOpen(false)}
+              />
+            </div>
+          </SheetContent>
+        </Sheet>
+        <Link
+          href={`/${org.slug}/dashboard`}
+          className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5"
+        >
+          <Avatar className="size-6 shrink-0">
+            <AvatarFallback className="text-xs">
+              {org.name.slice(0, 2).toUpperCase()}
+            </AvatarFallback>
+          </Avatar>
+          <span className="truncate text-sm font-medium">{org.name}</span>
+        </Link>
+        <button
+          type="button"
+          aria-label="Rechercher"
+          className="rounded-md p-2 text-muted-foreground hover:bg-accent hover:text-foreground"
+          onClick={() =>
+            window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true }))
+          }
+        >
+          <Search className="size-5" />
+        </button>
+      </div>
+
+      {/* Desktop */}
+      <aside
+        className={cn(
+          'hidden shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground transition-[width] duration-200 lg:flex',
+          collapsed ? 'w-16' : 'w-64',
+        )}
+      >
+        <SidebarContent
+          org={org}
+          orgs={orgs}
+          role={role}
+          user={user}
+          collapsed={collapsed}
+          onToggleCollapsed={toggleCollapsed}
+        />
+      </aside>
+    </>
   )
 }

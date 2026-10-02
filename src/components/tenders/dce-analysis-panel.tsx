@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useTransition } from 'react'
+import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import {
   AlertTriangle,
@@ -61,6 +62,7 @@ export function DceAnalysisPanel({
   analyses: DceAnalysisRow[]
   canEdit: boolean
 }) {
+  const router = useRouter()
   const [pending, startTransition] = useTransition()
   const [applying, startApply] = useTransition()
   const [current, setCurrent] = useState<{
@@ -94,6 +96,8 @@ export function DceAnalysisPanel({
         setCurrent(res.data)
         toast.success('Analyse du DCE terminée')
       }
+      // Rafraîchit la liste `analyses` (props) — historique et applied_at.
+      router.refresh()
     })
   }
 
@@ -109,6 +113,10 @@ export function DceAnalysisPanel({
               ? ` — ${res.attached} pièce${res.attached > 1 ? 's' : ''} société rattachée${res.attached > 1 ? 's' : ''} (${res.validated ?? 0} validée${res.validated === 1 ? '' : 's'})`
               : ''),
         )
+      // L'application réécrit champs, lots et checklist — la page doit
+      // se recharger pour refléter le dossier à jour (et marquer l'analyse
+      // comme appliquée via `applied_at`).
+      router.refresh()
     })
   }
 

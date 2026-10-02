@@ -99,6 +99,7 @@ export function TagPicker({
                 variant="outline"
                 disabled={pending || !newName.trim()}
                 onClick={create}
+                aria-label="Créer l'étiquette"
               >
                 <Plus className="size-3.5" />
               </Button>

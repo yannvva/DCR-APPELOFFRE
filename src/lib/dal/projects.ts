@@ -14,7 +14,12 @@ export async function listProjects(ctx: Ctx, params: ListParams = {}) {
     .eq('organization_id', ctx.org.id)
     .order('created_at', { ascending: false })
     .range(from, to)
-  if (params.q) q = q.ilike('name', `%${params.q}%`)
+  // Le code projet (« PRJ-2026-03 ») est affiché dans la liste — il doit
+  // être cherchable, pas seulement le nom.
+  if (params.q) {
+    const s = params.q.replace(/[",()\\]/g, ' ')
+    q = q.or(`name.ilike."%${s}%",code.ilike."%${s}%"`)
+  }
   if (params.status) q = q.eq('status', params.status)
   const { data, count, error } = await q
   if (error) throw error

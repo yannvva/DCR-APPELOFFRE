@@ -170,7 +170,7 @@ export function EcartsPanel({ ecarts }: { ecarts: DatasheetEcart[] }) {
                   value={q}
                   onChange={(e) => setQ(e.target.value)}
                   placeholder="Rechercher un écart…"
-                  className="h-7 w-52 rounded-md border border-input bg-transparent pl-7 pr-7 text-xs placeholder:text-muted-foreground"
+                  className="h-7 w-52 max-w-full rounded-md border border-input bg-transparent pl-7 pr-7 text-xs placeholder:text-muted-foreground"
                   aria-label="Rechercher un écart"
                 />
                 {q && (
@@ -363,7 +363,7 @@ export function AObtenirPanel({ items }: { items: DatasheetToObtain[] }) {
               {groups.length} sujets
             </Badge>
           </CardTitle>
-          <div className="relative w-56">
+          <div className="relative w-full max-w-56">
             <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
             <input
               value={q}

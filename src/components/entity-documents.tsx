@@ -11,6 +11,7 @@ import {
   Folder,
   Link2Off,
   Loader2,
+  Lock,
   Upload,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -24,6 +25,7 @@ import {
   useDocumentViewer,
 } from '@/components/documents/document-viewer'
 import { docTypeLabel } from '@/lib/doc-labels'
+import { isPipelineManagedDoc } from '@/lib/pipeline-docs'
 import { formatDate } from '@/lib/format'
 import { normalizeFolderPath } from '@/lib/folder-tree'
 import { shortText, shortenLotLabel } from '@/lib/naming'
@@ -155,10 +157,10 @@ export function EntityDocuments({
             {formatDate(doc.valid_until)}
           </span>
         )}
-        <span className="shrink-0 text-[10px] text-muted-foreground tabular-nums">
+        <span className="hidden shrink-0 text-[10px] text-muted-foreground tabular-nums sm:inline">
           {formatDate(doc.created_at)}
         </span>
-        <span className="shrink-0 text-xs text-muted-foreground tabular-nums">{formatSize(doc.size_bytes)}</span>
+        <span className="hidden shrink-0 text-xs text-muted-foreground tabular-nums md:inline">{formatSize(doc.size_bytes)}</span>
         <Button
           variant="ghost"
           size="icon-sm"
@@ -180,13 +182,25 @@ export function EntityDocuments({
             <Download className="size-4" />
           )}
         </Button>
-        {canEdit && (
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            disabled={pending}
-            aria-label={`Délier ${doc.name}`}
-            onClick={() =>
+        {canEdit &&
+          (isPipelineManagedDoc(doc) ? (
+            // Document produit par un workflow : délier le retirerait de
+            // l'onglet alors que le run continue de le livrer — icône
+            // informative au lieu d'une action incohérente.
+            <span
+              className="inline-flex size-6 items-center justify-center text-muted-foreground/60"
+              title="Document géré par un workflow (fiches, mémoire…) — non déliable ici"
+              aria-label="Document géré par un workflow"
+            >
+              <Lock className="size-3.5" />
+            </span>
+          ) : (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              disabled={pending}
+              aria-label={`Délier ${doc.name}`}
+              onClick={() =>
               startTransition(async () => {
                 const res = await unlinkDocumentByEntity(
                   orgSlug,
@@ -200,7 +214,7 @@ export function EntityDocuments({
           >
             <Link2Off className="size-4" />
           </Button>
-        )}
+          ))}
       </li>
     )
   }

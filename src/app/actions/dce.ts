@@ -90,7 +90,9 @@ async function expandUpload(
   }
 }
 
-/** Classe, stocke et lie chaque payload au dossier d'AO. */
+/** Classe, stocke et lie chaque payload au dossier d'AO. Traitement en
+ *  parallèle borné (4) : 80 pièces × 3 appels réseau séquentiels rendaient
+ *  l'import d'un DCE complet très long. L'ordre d'affichage est préservé. */
 async function persistPayloads(
   supabase: SupabaseClient,
   org: { id: string },
@@ -99,11 +101,14 @@ async function persistPayloads(
   payloads: Payload[],
   skipped: SkippedDoc[],
 ): Promise<DceImportResult['imported']> {
-  const imported: DceImportResult['imported'] = []
-  for (const p of payloads.slice(0, MAX_IMPORT_FILES)) {
+  const processOne = async (
+    p: Payload,
+  ): Promise<
+    | { imported: { name: string; docType: DceDocType; folder: string } }
+    | { skip: SkippedDoc }
+  > => {
     if (p.data.byteLength === 0 || p.data.byteLength > MAX_ENTRY_BYTES) {
-      skipped.push({ name: p.name, reason: 'vide ou trop volumineux (>80 Mo)' })
-      continue
+      return { skip: { name: p.name, reason: 'vide ou trop volumineux (>80 Mo)' } }
     }
 
     // Classification : nom d'abord, échantillon de contenu si ambigu.
@@ -132,8 +137,7 @@ async function persistPayloads(
       .from('documents')
       .upload(storagePath, p.data, { contentType: mime })
     if (upErr) {
-      skipped.push({ name: p.name, reason: `échec upload : ${upErr.message}` })
-      continue
+      return { skip: { name: p.name, reason: `échec upload : ${upErr.message}` } }
     }
 
     const { error: dbErr } = await supabase.from('documents').insert({
@@ -150,8 +154,9 @@ async function persistPayloads(
     })
     if (dbErr) {
       await supabase.storage.from('documents').remove([storagePath])
-      skipped.push({ name: p.name, reason: `échec enregistrement : ${dbErr.message}` })
-      continue
+      return {
+        skip: { name: p.name, reason: `échec enregistrement : ${dbErr.message}` },
+      }
     }
 
     const { error: linkErr } = await supabase.from('document_links').upsert(
@@ -166,10 +171,27 @@ async function persistPayloads(
     if (linkErr) {
       // Stocké mais non lié à l'AO : visible dans Documents mais absent de
       // l'onglet — on le signale au lieu de le perdre silencieusement.
-      skipped.push({ name: p.name, reason: 'importé mais échec de la liaison au dossier' })
-      continue
+      return {
+        skip: { name: p.name, reason: 'importé mais échec de la liaison au dossier' },
+      }
     }
-    imported.push({ name: p.name, docType, folder })
+    return { imported: { name: p.name, docType, folder } }
+  }
+
+  const list = payloads.slice(0, MAX_IMPORT_FILES)
+  const outcomes = new Array<Awaited<ReturnType<typeof processOne>>>(list.length)
+  const CONCURRENCY = 4
+  for (let i = 0; i < list.length; i += CONCURRENCY) {
+    const batch = await Promise.all(
+      list.slice(i, i + CONCURRENCY).map(processOne),
+    )
+    for (let j = 0; j < batch.length; j++) outcomes[i + j] = batch[j]
+  }
+
+  const imported: DceImportResult['imported'] = []
+  for (const r of outcomes) {
+    if ('imported' in r) imported.push(r.imported)
+    else skipped.push(r.skip)
   }
 
   if (payloads.length > MAX_IMPORT_FILES) {
@@ -652,8 +674,10 @@ export async function applyDceAnalysis(
 
   // Risques relevés par l'analyse → alertes du dossier (check_key dce_risk_*).
   // Dédupliquées par message normalisé : un risque déjà remonté n'est pas
-  // re-inséré ; un risque disparu de la nouvelle analyse est auto-résolu.
-  if (a.risks.length) {
+  // re-inséré ; un risque disparu de la nouvelle analyse est auto-résolu —
+  // y compris quand la nouvelle analyse ne trouve PLUS aucun risque (sinon
+  // les alertes d'une analyse précédente restaient ouvertes à jamais).
+  {
     const normMsg = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim()
     const { data: openRiskAlerts } = await supabase
       .from('tender_alerts')

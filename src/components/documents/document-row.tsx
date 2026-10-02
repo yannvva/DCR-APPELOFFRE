@@ -81,7 +81,14 @@ export function DocumentRow({
       toast.error(res.error)
       return
     }
-    window.open(res.url, '_blank', 'noopener')
+    // Clic d'ancre plutôt que window.open : pas d'onglet vide ni de blocage
+    // popup — l'URL signée porte Content-Disposition: attachment.
+    const a = document.createElement('a')
+    a.href = res.url
+    a.rel = 'noopener'
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
   }
 
   return (

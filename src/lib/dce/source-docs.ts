@@ -1,6 +1,7 @@
 import 'server-only'
 
 import { extractDceFiles } from './extract'
+import { PIPELINE_DOC_TYPES, PIPELINE_PATH_PREFIXES } from '@/lib/pipeline-docs'
 import type { ExtractedDoc, SkippedDoc } from './types'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
@@ -10,19 +11,11 @@ import type { SupabaseClient } from '@supabase/supabase-js'
  * généré contient l'identité DCR et serait classé « acte d'engagement »).
  * Le `document_type` est le critère fiable : les anciens fichiers peuvent
  * avoir un chemin de stockage sans préfixe pipeline.
+ * Listes partagées avec `pipeline-docs.ts` (protection suppression/déliaison)
+ * pour éviter la dérive constatée (`content_py` y manquait).
  */
-const GENERATED_DOC_TYPES = new Set([
-  'dc1',
-  'dc2',
-  'content_py',
-  'memoire_docx',
-  'Classeur_DCR',
-  'Arborescence_livraison',
-  'Livrable_importe',
-])
-
-/** Préfixes de stockage réservés aux sorties de pipelines. */
-const GENERATED_PATHS = ['/datasheets/', '/memoire/', '/dc/']
+const GENERATED_DOC_TYPES = PIPELINE_DOC_TYPES
+const GENERATED_PATHS = PIPELINE_PATH_PREFIXES
 
 /**
  * Catégories qui ne sont jamais des pièces du DCE : le kit candidature
@@ -83,12 +76,16 @@ export async function loadTenderSourceFiles(
   orgId: string,
   tenderId: string,
 ): Promise<TenderSourceFiles> {
-  const { data: links } = await supabase
+  // Erreur remontée, jamais masquée : une jointure en échec (PGRST…) doit
+  // faire échouer l'analyse — sans ça elle tourne sur un corpus vide et
+  // produit des résultats plausibles mais faux.
+  const { data: links, error } = await supabase
     .from('document_links')
     .select('document:documents(id, name, storage_path, mime_type, category, document_type)')
     .eq('organization_id', orgId)
     .eq('entity_type', 'tender')
     .eq('entity_id', tenderId)
+  if (error) throw error
 
   const linked = (links ?? [])
     .map((l) => (Array.isArray(l.document) ? l.document[0] : l.document))
@@ -108,19 +105,29 @@ export async function loadTenderSourceFiles(
     .filter((d) => !isAnalyzable(d.mime_type, d.name))
     .map((d) => ({ name: d.name, reason: 'format non analysable' }))
 
+  // Téléchargements storage par lots de 6 : un DCE réel compte des dizaines
+  // de pièces (~200-500 ms chacune) — en série, le dépouillage attendait
+  // plusieurs secondes avant même de démarrer l'extraction. L'ordre du
+  // tableau est préservé (indexé) pour un corpus d'analyse déterministe.
   const files: { name: string; data: Uint8Array; mime?: string }[] = []
-  for (const d of docs) {
-    const { data: blob } = await supabase.storage
-      .from('documents')
-      .download(d.storage_path)
-    if (!blob) {
-      skipped.push({ name: d.name, reason: 'téléchargement impossible' })
-      continue
-    }
-    files.push({
-      name: d.name,
-      data: new Uint8Array(await blob.arrayBuffer()),
-      mime: d.mime_type ?? undefined,
+  const DL_CONCURRENCY = 6
+  for (let i = 0; i < docs.length; i += DL_CONCURRENCY) {
+    const results = await Promise.all(
+      docs.slice(i, i + DL_CONCURRENCY).map(async (d) => {
+        const { data: blob } = await supabase.storage
+          .from('documents')
+          .download(d.storage_path)
+        if (!blob) return null
+        return {
+          name: d.name,
+          data: new Uint8Array(await blob.arrayBuffer()),
+          mime: d.mime_type ?? undefined,
+        }
+      }),
+    )
+    results.forEach((f, j) => {
+      if (f) files.push(f)
+      else skipped.push({ name: docs[i + j].name, reason: 'téléchargement impossible' })
     })
   }
 

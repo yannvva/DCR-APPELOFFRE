@@ -36,18 +36,23 @@ export function ContactDialog({
   contact,
   accounts,
   defaultOpen,
+  defaultAccountId,
   trigger,
 }: {
   orgSlug: string
   contact?: Contact
   accounts: AccountOption[]
   defaultOpen?: boolean
+  /** Entreprise présélectionnée (création depuis une fiche entreprise). */
+  defaultAccountId?: string
   trigger?: React.ReactElement
 }) {
   // Remonté via `key` par la page quand « ?new=1 » bascule (navigation SPA
   // depuis la palette ⌘K) — useState(defaultOpen) se réinitialise alors.
   const [open, setOpen] = useState(defaultOpen ?? false)
-  const [accountId, setAccountId] = useState(contact?.account_id ?? '')
+  const [accountId, setAccountId] = useState(
+    contact?.account_id ?? defaultAccountId ?? '',
+  )
   const {
     register,
     handleSubmit,
@@ -124,7 +129,10 @@ export function ContactDialog({
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="phone">Téléphone</Label>
-              <Input id="phone" {...register('phone')} />
+              <Input id="phone" type="tel" {...register('phone')} />
+              {errors.phone && (
+                <p className="text-xs text-destructive">{errors.phone.message}</p>
+              )}
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -143,6 +151,9 @@ export function ContactDialog({
                   ))}
                 </SelectContent>
               </Select>
+              {errors.accountId && (
+                <p className="text-xs text-destructive">{errors.accountId.message}</p>
+              )}
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="role">Fonction</Label>

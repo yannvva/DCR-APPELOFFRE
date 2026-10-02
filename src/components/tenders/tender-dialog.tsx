@@ -641,7 +641,7 @@ export function TenderDialog({
                     </label>
                   )}
                 />
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid gap-3 sm:grid-cols-3">
                   <div className="space-y-1.5">
                     <Label htmlFor="procedureType">Type de procédure</Label>
                     <Input
@@ -702,7 +702,7 @@ export function TenderDialog({
 
               {/* Organisation */}
               <TabsContent value="organisation" className="space-y-3">
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid gap-3 sm:grid-cols-3">
                   <div className="space-y-1.5">
                     <Label htmlFor="estimatedAmountEuros">Montant estimé (€)</Label>
                     <Input
@@ -730,7 +730,7 @@ export function TenderDialog({
                     <Input id="region" {...register('region')} />
                   </div>
                 </div>
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid gap-3 sm:grid-cols-3">
                   <div className="space-y-1.5">
                     <Label htmlFor="priceWeight">Critère prix (%)</Label>
                     <Input

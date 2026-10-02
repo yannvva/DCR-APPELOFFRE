@@ -34,7 +34,12 @@ const SORTABLE_TENDER_FIELDS = new Set([
 
 export async function listTenders(
   ctx: Ctx,
-  params: ListParams & { status?: TenderStatus; responsibleId?: string; buyerId?: string } = {},
+  params: ListParams & {
+    status?: TenderStatus
+    responsibleId?: string
+    buyerId?: string
+    preset?: 'open' | 'due_soon' | 'overdue' | 'visit' | 'incomplete'
+  } = {},
 ) {
   const { page, pageSize, from, to } = resolveListParams(params)
   const sort = SORTABLE_TENDER_FIELDS.has(params.sort ?? '')
@@ -48,9 +53,66 @@ export async function listTenders(
     .eq('organization_id', ctx.org.id)
     .order(sort, { ascending: params.order !== 'desc' })
     .range(from, to)
-  if (params.q) {
-    q = q.or(`title.ilike.%${params.q}%,reference.ilike.%${params.q}%`)
+
+  const qText = params.q?.trim()
+  if (qText) {
+    // Recherche étendue à l'acheteur : résolution des comptes puis OR sur
+    // buyer_account_id (un filtre embedded exigerait une jointure inner qui
+    // éliminerait les AO sans acheteur).
+    const pat = qText.replace(/[(),'"]/g, ' ').trim()
+    const { data: buyers } = await ctx.supabase
+      .from('accounts')
+      .select('id')
+      .eq('organization_id', ctx.org.id)
+      .ilike('name', `%${qText}%`)
+      .limit(50)
+    const ors = [`title.ilike.%${pat}%`, `reference.ilike.%${pat}%`]
+    const ids = (buyers ?? []).map((b) => b.id)
+    if (ids.length) ors.push(`buyer_account_id.in.(${ids.join(',')})`)
+    q = q.or(ors.join(','))
   }
+
+  if (params.preset) {
+    const nowIso = new Date().toISOString()
+    const soonIso = new Date(Date.now() + 7 * 86_400_000).toISOString()
+    switch (params.preset) {
+      case 'open':
+        q = q.in('status', [...OPEN_STATUSES])
+        break
+      case 'due_soon':
+        q = q
+          .in('status', [...OPEN_STATUSES])
+          .gte('response_deadline', nowIso)
+          .lte('response_deadline', soonIso)
+        break
+      case 'overdue':
+        q = q.in('status', [...OPEN_STATUSES]).lt('response_deadline', nowIso)
+        break
+      case 'visit':
+        // Visite obligatoire ni faite ni justifiée — vrai risque d'irrecevabilité.
+        q = q
+          .in('status', [...OPEN_STATUSES])
+          .eq('site_visit_mandatory', true)
+          .eq('site_visit_justified', false)
+        break
+      case 'incomplete': {
+        // AO ayant au moins une pièce obligatoire non validée — même périmètre
+        // que le calcul de complétude ci-dessous.
+        const { data: missing } = await ctx.supabase
+          .from('tender_checklist_items')
+          .select('tender_id')
+          .eq('organization_id', ctx.org.id)
+          .eq('requirement', 'obligatoire')
+          .neq('category', 'depot')
+          .not('status', 'in', '("valide","non_requis")')
+        const ids = [...new Set((missing ?? []).map((m) => m.tender_id))]
+        if (!ids.length) return toPaged([], 0, page, pageSize)
+        q = q.in('id', ids)
+        break
+      }
+    }
+  }
+
   if (params.status) q = q.eq('status', params.status)
   if (params.responsibleId) q = q.eq('responsible_id', params.responsibleId)
   if (params.buyerId) q = q.eq('buyer_account_id', params.buyerId)

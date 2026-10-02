@@ -74,7 +74,7 @@ export function DocumentPicker({
       </PopoverTrigger>
       <PopoverContent
         align="start"
-        className="w-(--anchor-width) min-w-72 gap-1.5 p-1.5"
+        className="w-(--anchor-width) min-w-[min(18rem,calc(100vw-1rem))] gap-1.5 p-1.5"
       >
         <div className="relative">
           <Search className="absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />

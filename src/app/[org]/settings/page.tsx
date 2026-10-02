@@ -45,7 +45,13 @@ const AUDIT_LABELS: Record<string, string> = {
   'document.uploaded': 'Document déposé',
   'document.deleted': 'Document supprimé',
   'document.validity_updated': 'Validité de document modifiée',
+  'document.folder_exported': 'Dossier exporté en ZIP',
+  'document.marked_signed': 'Pièce marquée signée',
+  'document.marked_unsigned': 'Signature de pièce annulée',
+  'checklist.validated': 'Ligne de checklist validée',
+  'checklist.force_validated': 'Validation forcée (checklist)',
   'checklist.company_docs_attached': 'Pièces société rattachées',
+  'task.deleted': 'Tâche supprimée',
   'tender.created': 'Appel d’offres créé',
   'tender.status_changed': 'Statut d’AO modifié',
   'tender.deleted': 'Appel d’offres supprimé',
@@ -128,7 +134,7 @@ export default async function SettingsPage({
   const initials = (profile?.full_name || user.email || '?').slice(0, 2).toUpperCase()
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-6 p-4 sm:p-6">
       <div className="flex items-center gap-3">
         <Settings className="size-6 text-primary" />
         <div>

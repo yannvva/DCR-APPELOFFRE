@@ -14,7 +14,7 @@ export default async function OrgLayout({
   const orgs = await getUserOrganizations()
 
   return (
-    <div className="flex min-h-svh">
+    <div className="flex min-h-svh flex-col lg:flex-row">
       <AppSidebar
         org={ctx.org}
         orgs={orgs}
@@ -24,7 +24,9 @@ export default async function OrgLayout({
           fullName: ctx.profile?.full_name ?? '',
         }}
       />
-      <main className="flex-1 overflow-y-auto">{children}</main>
+      {/* min-w-0 : sans lui, le flex item refuse de rétrécir sous la largeur
+          de son contenu et les pages larges débordent horizontalement. */}
+      <main className="min-w-0 flex-1 overflow-y-auto">{children}</main>
       <CommandPalette orgSlug={orgSlug} />
     </div>
   )

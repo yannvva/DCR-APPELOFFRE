@@ -62,7 +62,12 @@ export async function listContacts(ctx: Ctx, params: ListParams & { accountId?: 
     .eq('organization_id', ctx.org.id)
     .order('last_name')
     .range(from, to)
-  if (params.q) q = q.or(`last_name.ilike.%${params.q}%,first_name.ilike.%${params.q}%,email.ilike.%${params.q}%`)
+  if (params.q) {
+    const s = params.q.replace(/[",()\\]/g, ' ')
+    q = q.or(
+      `last_name.ilike."%${s}%",first_name.ilike."%${s}%",email.ilike."%${s}%"`,
+    )
+  }
   if (params.accountId) q = q.eq('account_id', params.accountId)
   const { data, count, error } = await q
   if (error) throw error
@@ -103,13 +108,17 @@ export async function getDefaultPipeline(ctx: Ctx) {
   }
 }
 
-export async function listOpportunities(ctx: Ctx, params: ListParams & { pipelineId?: string } = {}) {
+export async function listOpportunities(
+  ctx: Ctx,
+  params: ListParams & { pipelineId?: string; accountId?: string } = {},
+) {
   let q = ctx.supabase
     .from('opportunities')
     .select('*, account:accounts(id, name), stage:pipeline_stages(id, name)')
     .eq('organization_id', ctx.org.id)
     .order('updated_at', { ascending: false })
   if (params.pipelineId) q = q.eq('pipeline_id', params.pipelineId)
+  if (params.accountId) q = q.eq('account_id', params.accountId)
   if (params.status) q = q.eq('status', params.status)
   if (params.q) q = q.ilike('title', `%${params.q}%`)
   const { data, error } = await q
@@ -137,7 +146,10 @@ export async function listLeads(ctx: Ctx, params: ListParams = {}) {
     .eq('organization_id', ctx.org.id)
     .order('created_at', { ascending: false })
     .range(from, to)
-  if (params.q) q = q.ilike('title', `%${params.q}%`)
+  if (params.q) {
+    const s = params.q.replace(/[",()\\]/g, ' ')
+    q = q.or(`title.ilike."%${s}%",source.ilike."%${s}%"`)
+  }
   if (params.status) q = q.eq('status', params.status)
   const { data, count, error } = await q
   if (error) throw error

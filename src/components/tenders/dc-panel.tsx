@@ -13,6 +13,7 @@ import {
   Loader2,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
+import { ActionProgress } from '@/components/ui/action-progress'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -53,8 +54,11 @@ export function DcPanel({
   // rendu → les lots créés à la volée après une génération restent cochés.
   const [override, setOverride] = useState<string[] | null>(null)
   const defaults = lots.filter((l) => l.selected).map((l) => l.id)
-  const selected =
+  // Ids présents en base uniquement : un lot supprimé entre deux rendus
+  // laisserait une case fantôme cochée et un compte de DC2 erroné.
+  const selected = (
     override ?? (defaults.length ? defaults : lots.map((l) => l.id))
+  ).filter((id) => lots.some((l) => l.id === id))
   const [pending, startTransition] = useTransition()
   const [downloading, setDownloading] = useState<string | null>(null)
 
@@ -90,12 +94,10 @@ export function DcPanel({
         toast.error(res.error)
         return
       }
-      const n =
-        1 +
-        (lots.length
-          ? selected.length
-          : analysisLots.length || 1)
-      toast.success(`${n} document(s) généré(s) — DC1 + DC2 rangés dans Documents`)
+      // Compte réel renvoyé par le serveur (les lots périmés y sont écartés).
+      toast.success(
+        `${res?.generated ?? 0} document(s) généré(s) — DC1 + DC2 rangés dans Documents`,
+      )
       if (res?.warnings?.length) {
         toast.warning(
           `Champ(s) resté(s) vide(s) dans les gabarits : ${res.warnings.join(', ')} — complétez le profil Société.`,
@@ -164,7 +166,7 @@ export function DcPanel({
                     <Checkbox
                       checked={selected.includes(l.id)}
                       onCheckedChange={() => toggle(l.id)}
-                      disabled={!canEdit}
+                      disabled={!canEdit || pending}
                     />
                     <span className="min-w-0 truncate">
                       Lot {l.number} — {l.title}
@@ -212,6 +214,16 @@ export function DcPanel({
               Les fichiers .docx sont rangés dans l’onglet Documents (dossier DC).
             </p>
           </div>
+          {pending && (
+            <ActionProgress
+              title="Génération des formulaires DC1/DC2"
+              steps={[
+                'Chargement des gabarits DCR et du profil société',
+                'Remplissage DC1 + un DC2 par lot',
+                'Rangement dans Documents et mise à jour de la checklist',
+              ]}
+            />
+          )}
         </CardContent>
       </Card>
 

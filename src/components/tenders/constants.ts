@@ -18,6 +18,19 @@ export const TENDER_STATUS_LABELS: Record<TenderStatus, string> = {
   annule: 'Annulé',
 }
 
+/** Filtres métier de la liste des AO (paramètre `preset` dans l'URL).
+ *  'mine' est résolu côté page (responsable = utilisateur courant). */
+export type TenderPreset = 'open' | 'due_soon' | 'overdue' | 'visit' | 'incomplete' | 'mine'
+
+export const TENDER_PRESET_LABELS: Record<TenderPreset, string> = {
+  open: 'En cours',
+  due_soon: 'À rendre ≤ 7 j',
+  overdue: 'En retard',
+  visit: 'Visite à organiser',
+  incomplete: 'Pièces manquantes',
+  mine: 'Mes dossiers',
+}
+
 export const TENDER_STATUS_COLORS: Record<TenderStatus, string> = {
   detecte: 'bg-slate-500/15 text-slate-600 dark:text-slate-300',
   analyse: 'bg-blue-500/15 text-blue-600 dark:text-blue-300',

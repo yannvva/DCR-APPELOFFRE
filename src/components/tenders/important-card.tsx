@@ -255,7 +255,7 @@ export function ImportantCard({
                 <p className="flex items-center gap-1.5 font-medium">
                   <Sparkles className="size-3.5 text-primary" /> Demande de visite (IA)
                 </p>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid gap-3 sm:grid-cols-2">
                   <div>
                     <Label htmlFor="visit-date">Date de visite</Label>
                     <Input
@@ -299,7 +299,7 @@ export function ImportantCard({
                     </Select>
                   </div>
                 )}
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid gap-3 sm:grid-cols-2">
                   <div>
                     <Label htmlFor="visit-name">Destinataire</Label>
                     <Input

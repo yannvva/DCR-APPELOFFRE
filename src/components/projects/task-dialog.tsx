@@ -148,7 +148,7 @@ export function TaskDialog({
             <Label htmlFor="description">Description</Label>
             <Textarea id="description" rows={3} {...register('description')} />
           </div>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid gap-3 sm:grid-cols-3">
             <div className="space-y-1.5">
               <Label>Statut</Label>
               <Select value={status} onValueChange={(v) => setStatus(v ?? 'todo')}>

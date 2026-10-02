@@ -71,8 +71,8 @@ export function MembersClient({
   invitations: OrganizationInvitation[]
 }) {
   return (
-    <div className="space-y-6 p-6">
-      <div className="flex items-center justify-between">
+    <div className="space-y-6 p-4 sm:p-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold">Membres</h1>
           <p className="text-sm text-muted-foreground">
@@ -312,6 +312,8 @@ function InviteDialog({ orgSlug }: { orgSlug: string }) {
             <Button
               variant="ghost"
               size="icon"
+              aria-label="Copier le lien d'invitation"
+              title="Copier le lien"
               onClick={() => {
                 void navigator.clipboard.writeText(inviteLink)
                 toast.success('Lien copié')
