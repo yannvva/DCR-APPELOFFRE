@@ -180,50 +180,82 @@ export async function changeEmail(
   return { success: true }
 }
 
-/** Tables exportées dans le dump RGPD (métadonnées — pas les binaires). */
+/** Tables exportées dans le dump RGPD (métadonnées — pas les binaires).
+ *  Noms exacts du schéma : les runs DCE/fiches/mémoire/dépôts sont préfixés
+ *  `tender_` (un nom approximatif renvoyait une table inexistante et le dump
+ *  perdait silencieusement la donnée). */
 const EXPORT_TABLES = [
   'accounts',
   'contacts',
   'leads',
   'opportunities',
+  'pipelines',
+  'pipeline_stages',
   'projects',
+  'project_members',
   'tasks',
+  'task_assignees',
+  'task_comments',
+  'interactions',
   'documents',
   'document_links',
   'tags',
   'entity_tags',
   'tenders',
   'tender_lots',
+  'tender_members',
   'tender_checklist_items',
-  'dce_analyses',
-  'datasheet_runs',
-  'memoire_runs',
-  'submissions',
+  'tender_alerts',
+  'tender_results',
+  'tender_dce_analyses',
+  'tender_datasheet_runs',
+  'tender_memoire_runs',
+  'tender_submissions',
   'activity_logs',
 ] as const
+
+/** Plafond par table — au-delà, le dump est partiel et doit le dire. */
+const EXPORT_LIMIT = 10_000
 
 /**
  * Export complet des données de l'organisation (JSON) — portabilité RGPD.
  * Réservé owner/admin ; renvoie le JSON en clair, le client le télécharge.
+ * Une table en erreur ou tronquée est signalée dans `_meta` : un export
+ * incomplet ne doit jamais ressembler à un export complet.
  */
 export async function exportOrganizationData(
   orgSlug: string,
-): Promise<{ error?: string; json?: string }> {
+): Promise<{ error?: string; json?: string; warning?: string }> {
   const ctx = await requireMembership(orgSlug, 'admin')
   if (!ctx) return { error: 'Accès refusé.' }
   const { supabase, org } = ctx
+
+  const results = await Promise.all(
+    EXPORT_TABLES.map(async (table) => {
+      const { data, error } = await supabase
+        .from(table)
+        .select('*')
+        .eq('organization_id', org.id)
+        .limit(EXPORT_LIMIT)
+      return { table, data: data ?? [], error: error?.message ?? null }
+    }),
+  )
 
   const dump: Record<string, unknown> = {
     exported_at: new Date().toISOString(),
     organization: org,
   }
-  for (const table of EXPORT_TABLES) {
-    const { data } = await supabase
-      .from(table)
-      .select('*')
-      .eq('organization_id', org.id)
-      .limit(10_000)
-    dump[table] = data ?? []
+  const failures: Record<string, string> = {}
+  const truncated: string[] = []
+  for (const r of results) {
+    if (r.error) failures[r.table] = r.error
+    if (r.data.length >= EXPORT_LIMIT) truncated.push(r.table)
+    dump[r.table] = r.data
+  }
+  dump._meta = {
+    tables: EXPORT_TABLES.length,
+    ...(truncated.length ? { truncated } : {}),
+    ...(Object.keys(failures).length ? { failures } : {}),
   }
 
   await audit(supabase, {
@@ -231,9 +263,26 @@ export async function exportOrganizationData(
     action: 'organization.exported',
     entityType: 'organization',
     entityId: org.id,
+    metadata: {
+      tables: EXPORT_TABLES.length,
+      truncated,
+      failures: Object.keys(failures),
+    },
   })
 
-  return { json: JSON.stringify(dump, null, 2) }
+  // Un export partiel reste téléchargeable — le refuser priverait l'utilisateur
+  // de ses données pour une table en échec — mais il est signalé.
+  const warnings = [
+    truncated.length ? `tronquée(s) à ${EXPORT_LIMIT} lignes : ${truncated.join(', ')}` : null,
+    Object.keys(failures).length
+      ? `en échec : ${Object.keys(failures).join(', ')}`
+      : null,
+  ].filter(Boolean)
+
+  return {
+    json: JSON.stringify(dump, null, 2),
+    warning: warnings.length ? `Export partiel — ${warnings.join(' ; ')}.` : undefined,
+  }
 }
 
 /**

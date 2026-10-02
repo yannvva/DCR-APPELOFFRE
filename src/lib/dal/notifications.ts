@@ -21,6 +21,10 @@ export interface NotificationItem {
  * role — la policy `notifications_insert` n'existe pas (écriture système
  * uniquement, jamais côté client). Dédupliqué : une notification non lue
  * identique (même user + type + entité + titre) n'est pas recréée.
+ *
+ * `dedupeWindowHours` étend la déduplication aux notifications **déjà lues**
+ * créées récemment : sans lui, un rappel marqué lu serait recréé à chaque
+ * chargement de page (les rappels d'échéance s'en servent).
  * @returns le nombre de notifications réellement créées.
  */
 export async function notifyUsers({
@@ -31,6 +35,7 @@ export async function notifyUsers({
   body,
   entityType,
   entityId,
+  dedupeWindowHours,
 }: {
   organizationId: string
   userIds: string[]
@@ -39,6 +44,7 @@ export async function notifyUsers({
   body?: string
   entityType?: string
   entityId?: string
+  dedupeWindowHours?: number
 }): Promise<number> {
   const targets = [...new Set(userIds)].filter(Boolean)
   if (targets.length === 0) return 0
@@ -48,15 +54,23 @@ export async function notifyUsers({
   try {
     const admin = createAdminClient()
 
-    // Dedup : on saute les users ayant déjà cette notif non lue.
+    // Dedup : on saute les users ayant déjà cette notif non lue — ou, dans
+    // la fenêtre demandée, une notif identique même déjà lue.
     let query = admin
       .from('notifications')
       .select('user_id')
       .eq('organization_id', organizationId)
       .eq('type', type)
       .eq('title', title)
-      .is('read_at', null)
       .in('user_id', targets)
+    if (dedupeWindowHours) {
+      query = query.gte(
+        'created_at',
+        new Date(Date.now() - dedupeWindowHours * 3600 * 1000).toISOString(),
+      )
+    } else {
+      query = query.is('read_at', null)
+    }
     if (entityType) query = query.eq('entity_type', entityType)
     if (entityId) query = query.eq('entity_id', entityId)
     const { data: existing } = await query

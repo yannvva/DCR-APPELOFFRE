@@ -36,8 +36,15 @@ export async function sendEmail({
   }
 }
 
+/** Échappement HTML — les guillemets comptent : les URL sont insérées dans
+ *  des attributs `href`, où une quote fermerait l'attribut. */
 function esc(s: string) {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
 }
 
 export function inviteEmailHtml({

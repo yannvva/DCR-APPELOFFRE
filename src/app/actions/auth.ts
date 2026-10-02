@@ -4,14 +4,7 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { loginSchema, signupSchema, forgotPasswordSchema, updatePasswordSchema, type ActionState } from '@/lib/validation/auth'
 import { getEnv } from '@/env'
-
-// Cible interne uniquement — `//hote.tld` est une URL protocol-relative
-// valide qui redirigerait vers un site externe.
-function safeNext(next: FormDataEntryValue | null, fallback: string) {
-  return typeof next === 'string' && next.startsWith('/') && !next.startsWith('//')
-    ? next
-    : fallback
-}
+import { safeNext } from '@/lib/safe-redirect'
 
 export async function signup(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const parsed = signupSchema.safeParse({

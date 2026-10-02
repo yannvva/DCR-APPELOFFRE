@@ -180,7 +180,8 @@ export function DangerZone({
       a.download = `nexus-export-${orgSlug}-${new Date().toISOString().slice(0, 10)}.json`
       a.click()
       URL.revokeObjectURL(url)
-      toast.success('Export téléchargé')
+      if (res.warning) toast.warning(res.warning)
+      else toast.success('Export téléchargé')
     })
   }
 

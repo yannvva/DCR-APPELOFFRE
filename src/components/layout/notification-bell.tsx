@@ -42,11 +42,18 @@ export function NotificationBell({ orgSlug }: { orgSlug: string }) {
   useEffect(() => {
     // Chargement initial différé (microtâche) puis rafraîchissement
     // périodique : l'état n'est jamais posé pendant le rendu de l'effet.
-    const initial = setTimeout(() => void refresh(), 0)
-    const t = setInterval(() => void refresh(), 60_000)
+    // Onglet en arrière-plan : aucun appel — on rafraîchit au retour, sinon
+    // chaque onglet ouvert interrogeait le serveur toutes les minutes.
+    const load = () => {
+      if (document.visibilityState === 'visible') void refresh()
+    }
+    const initial = setTimeout(load, 0)
+    const t = setInterval(load, 60_000)
+    document.addEventListener('visibilitychange', load)
     return () => {
       clearTimeout(initial)
       clearInterval(t)
+      document.removeEventListener('visibilitychange', load)
     }
   }, [refresh])
 
