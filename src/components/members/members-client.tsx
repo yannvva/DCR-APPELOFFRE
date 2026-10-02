@@ -275,7 +275,9 @@ function InviteDialog({ orgSlug }: { orgSlug: string }) {
         <DialogHeader>
           <DialogTitle>Inviter un membre</DialogTitle>
           <DialogDescription>
-            Un lien d’invitation sera généré — transmettez-le à la personne.
+            {state?.success && state.emailSent
+              ? 'Invitation envoyée par email — le lien reste copiable ci-dessous.'
+              : 'Un lien d’invitation sera généré — transmettez-le à la personne.'}
           </DialogDescription>
         </DialogHeader>
         <form ref={formRef} action={formAction} className="space-y-4">
@@ -302,7 +304,7 @@ function InviteDialog({ orgSlug }: { orgSlug: string }) {
           </div>
           {state?.error && <p className="text-sm text-destructive">{state.error}</p>}
           <Button type="submit" className="w-full" disabled={pending}>
-            {pending ? 'Création…' : 'Générer le lien'}
+            {pending ? 'Envoi…' : state?.emailSent ? 'Inviter' : 'Générer le lien'}
           </Button>
         </form>
 

@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { requireMembership } from '@/lib/dal/auth'
+import { notifyUsers } from '@/lib/dal/notifications'
 import { audit } from '@/lib/audit'
 import { commentSchema, projectSchema, taskSchema } from '@/lib/validation/domain'
 import type { ActionState } from '@/lib/validation/auth'
@@ -260,6 +261,14 @@ export async function createTask(
         user_id: uid,
       }))
     if (rows.length) await ctx.supabase.from('task_assignees').insert(rows)
+    await notifyUsers({
+      organizationId: ctx.org.id,
+      userIds: d.assigneeIds.filter((uid) => uid !== ctx.user.id && valid.has(uid)),
+      type: 'task_assigned',
+      title: `Tâche assignée : ${d.title}`,
+      entityType: 'task',
+      entityId: task.id,
+    })
   }
 
   await ctx.supabase.from('activity_logs').insert({
@@ -326,6 +335,24 @@ export async function updateTask(
       user_id: uid,
     }))
     if (rows.length) await ctx.supabase.from('task_assignees').insert(rows)
+
+    const newAssignees = d.assigneeIds.filter((uid) => uid !== ctx.user.id && valid.has(uid))
+    if (newAssignees.length) {
+      const { data: t } = await ctx.supabase
+        .from('tasks')
+        .select('title')
+        .eq('organization_id', ctx.org.id)
+        .eq('id', taskId)
+        .maybeSingle()
+      await notifyUsers({
+        organizationId: ctx.org.id,
+        userIds: newAssignees,
+        type: 'task_assigned',
+        title: `Tâche assignée : ${t?.title ?? 'tâche'}`,
+        entityType: 'task',
+        entityId: taskId,
+      })
+    }
   }
 
   await ctx.supabase.from('activity_logs').insert({

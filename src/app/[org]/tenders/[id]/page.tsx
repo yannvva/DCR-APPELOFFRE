@@ -65,6 +65,13 @@ import { tenderPath } from '@/lib/slug'
 import { cn } from '@/lib/utils'
 import type { Document } from '@/lib/types'
 
+/**
+ * Les Server Actions déclenchées depuis cette page lancent des traitements
+ * longs (build mémoire via Python, téléchargement de dizaines de fiches PDF).
+ * Sans cette limite, un hébergement serverless coupe la requête en plein vol.
+ */
+export const maxDuration = 300
+
 export default async function TenderDetailPage({
   params,
   searchParams,

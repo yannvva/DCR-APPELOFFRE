@@ -6,6 +6,10 @@ import {
 } from '@/lib/dal/datasheet-library'
 import { LibraryGrid } from '@/components/datasheets/library-grid'
 
+/** Les actions de cette page (import/attachement de fiches) peuvent télécharger
+ *  des PDF distants — même limite que la page AO. */
+export const maxDuration = 300
+
 export default async function FichesPage({
   params,
 }: PageProps<'/[org]/fiches'>) {

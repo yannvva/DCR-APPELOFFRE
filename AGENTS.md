@@ -36,10 +36,20 @@ Delivery piloté par **BMAD Method** — artefacts dans `docs/` :
   4. **rattachement manuel garanti** (`attachDatasheetDocument` : import d'un PDF ou collage d'une URL, ligne par ligne dans le panneau).
   Constat vérifié : les sites fabricants français sont JS/anti-bot (Weber 403 Cloudflare, PRB documenthèque JS, SIKA PDF en JS) — sitemaps, chemins `/documentation`, API WordPress et agrégateurs BTP ne rendent AUCUN PDF. Seule la recherche (ou une API) trouve les fiches. Ne jamais présenter une absence de résultat comme « le document n'existe pas » : `searchHealth()` distingue « aucun document » de « moteurs indisponibles ».
 
+## Comptes, emails & monitoring
+
+- **Réinitialisation de mot de passe** : `/mot-de-passe-oublie` → email Supabase → `/auth/callback?next=/auth/update-password`. Ces chemins sont dans `PUBLIC_PATHS` (`src/proxy.ts`) — toute nouvelle page publique doit y être ajoutée, sinon redirection vers `/login`.
+- **Emails transactionnels** (`src/lib/email.ts`) : Resend via API REST, **sans dépendance**. Sans `RESEND_API_KEY` + `EMAIL_FROM`, `sendEmail` renvoie false et l'app garde son repli manuel (lien d'invitation à copier). Ne jamais faire dépendre une fonctionnalité de l'envoi d'email.
+- **Notifications in-app** (`src/lib/dal/notifications.ts`) : la table `notifications` n'a **aucune policy INSERT** — l'écriture passe par `notifyUsers()` (service role, `src/lib/supabase/admin.ts`). Dédupliqué sur (user, type, titre, entité) non lu : rappeler `notifyUsers` est idempotent. Rappels d'échéance générés au chargement du tableau de bord (`syncDeadlineNotifications`), email envoyé uniquement si une notification vient d'être créée.
+- **Monitoring** : Sentry opt-in (`src/instrumentation.ts`, `src/instrumentation-client.ts`) — inerte sans `SENTRY_DSN` / `NEXT_PUBLIC_SENTRY_DSN`. Pas de `withSentryConfig` dans `next.config.ts` (compatibilité Turbopack) : les source maps ne sont pas téléversées.
+- **Conformité** : export JSON complet de l'organisation (Paramètres → Données & conformité, owner/admin) et suppression d'organisation (owner, confirmation par saisie du nom exact). Pages publiques `/mentions-legales` et `/confidentialite` — champs entre crochets à compléter avant commercialisation.
+
 ## Commandes
 
 - `npm run dev` / `build` / `lint` / `typecheck` / `test` (vitest) / `test:live` (appels réels API/BDD) / `test:e2e` (playwright)
 - Tests **live** (réseau + service role) : uniquement dans `tests/live/`, jamais dans `tests/unit/` — `npm test` doit rester hermétique et hors-ligne.
+- e2e : `npx playwright install chromium` (une fois) puis `npm run test:e2e`. Les specs vivent dans `tests/e2e/` — parcours non authentifiés uniquement (pas de compte de test).
+- `maxDuration = 300` déclaré sur les segments qui déclenchent des traitements longs (page AO, page fiches) : les Server Actions héritent de la config du segment sur un hébergeur serverless.
 - Types DB : `npx supabase gen types --linked > src/lib/database.types.ts` (à générer après `supabase link`)
 - Migrations : fichiers `supabase/migrations/NNNN_*.sql` versionnés, appliqués via `supabase db push`
 
@@ -47,5 +57,6 @@ Delivery piloté par **BMAD Method** — artefacts dans `docs/` :
 
 - Next.js 16 : `proxy.ts` (pas `middleware.ts`), `cookies()`/`params`/`searchParams` async obligatoires.
 - Jobs/agents : Inngest retenu (hypothèse à revalider en V1) — tables `agent_*`/`automation_*` déjà créées, inertes.
-- Hors MVP : agents actifs, calendrier, saved views, notifications in-app, billing, Gantt, intégrations.
+- Hors MVP : agents actifs, calendrier, saved views, billing, Gantt, intégrations.
+- **Vulnérabilités npm connues** (2 modérées, transitives) : `uuid < 11.1.1` via `exceljs` — le correctif impose un downgrade breaking d'exceljs. Le vecteur (buffer fourni à uuid v3/v5/v6) n'est pas emprunté par nos usages.
 

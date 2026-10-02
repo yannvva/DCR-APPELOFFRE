@@ -25,6 +25,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { OrgNameForm, ProfileForm } from '@/components/settings/settings-forms'
+import { DangerZone, SecurityForm } from '@/components/settings/security-forms'
 import type { AuditLog, JobRole } from '@/lib/types'
 
 const ROLE_LABELS: Record<string, string> = {
@@ -233,8 +234,22 @@ export default async function SettingsPage({
               initialDefaultOrgId={profile?.default_organization_id ?? null}
               orgs={orgs.map((o) => ({ id: o.id, name: o.name }))}
             />
+            <Separator />
+            <SecurityForm orgSlug={orgSlug} currentEmail={user.email ?? ''} />
           </CardContent>
         </Card>
+
+        {/* ---- Données & conformité ---- */}
+        {isAdmin && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Données & conformité</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <DangerZone orgSlug={orgSlug} orgName={org.name} isOwner={role === 'owner'} />
+            </CardContent>
+          </Card>
+        )}
 
         {/* ---- Organisation ---- */}
         <Card>

@@ -42,3 +42,7 @@ next-env.d.ts
 
 # artefacts de test / tmp
 .tmp-*
+
+# playwright
+/test-results/
+/playwright-report/

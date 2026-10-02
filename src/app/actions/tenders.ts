@@ -7,6 +7,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { importTenderFromUrl, normalizeHttpUrl, type TenderImport } from '@/lib/tender-import'
 import { analyzeRcDocument, type RcAnalysis } from '@/lib/rc-analysis'
 import { requireMembership } from '@/lib/dal/auth'
+import { notifyUsers } from '@/lib/dal/notifications'
 import { audit } from '@/lib/audit'
 import { completeJson } from '@/lib/ai/deepseek'
 import { normalizeAnalysis } from '@/lib/dce/normalize'
@@ -744,6 +745,26 @@ export async function assignChecklistItem(
     .eq('organization_id', ctx.org.id)
     .eq('id', itemId)
   if (error) return fail(error)
+
+  if (assigneeId && assigneeId !== ctx.user.id) {
+    const { data: item } = await ctx.supabase
+      .from('tender_checklist_items')
+      .select('label, tender:tenders(title)')
+      .eq('organization_id', ctx.org.id)
+      .eq('id', itemId)
+      .maybeSingle()
+    const tenderTitle = (item?.tender as { title?: string } | null)?.title
+    await notifyUsers({
+      organizationId: ctx.org.id,
+      userIds: [assigneeId],
+      type: 'checklist_assigned',
+      title: `Pièce assignée : ${item?.label ?? 'pièce du dossier'}`,
+      body: tenderTitle ? `Dossier ${tenderTitle}` : undefined,
+      entityType: 'tender',
+      entityId: tenderId,
+    })
+  }
+
   revalidateTenderPages(orgSlug)
   return { success: true }
 }

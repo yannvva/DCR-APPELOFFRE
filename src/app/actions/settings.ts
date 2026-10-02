@@ -1,13 +1,18 @@
 'use server'
 
+import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import { requireMembership } from '@/lib/dal/auth'
 import { audit } from '@/lib/audit'
 import {
+  changeEmailSchema,
+  changePasswordSchema,
+  deleteOrganizationSchema,
   updateMyProfileSchema,
   updateOrganizationSchema,
   type ActionState,
 } from '@/lib/validation/auth'
+import { createClient } from '@/lib/supabase/server'
 
 /**
  * Profil courant : nom affiché, fonction métier dans l'org (job_role) et
@@ -102,4 +107,158 @@ export async function updateOrganizationName(
 
   revalidatePath(`/${orgSlug}`, 'layout')
   return { success: true }
+}
+
+/**
+ * Changement de mot de passe : re-authentification obligatoire avec le mot de
+ * passe actuel (une session volée ne suffit pas à verrouiller le compte).
+ */
+export async function changePassword(
+  orgSlug: string,
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const ctx = await requireMembership(orgSlug, 'viewer')
+  if (!ctx) return { error: 'Accès refusé.' }
+  const { org, user } = ctx
+
+  const parsed = changePasswordSchema.safeParse({
+    current: formData.get('current'),
+    password: formData.get('password'),
+    confirm: formData.get('confirm'),
+  })
+  if (!parsed.success) return { fieldErrors: parsed.error.flatten().fieldErrors }
+
+  const supabase = await createClient()
+  const email = user.email
+  if (!email) return { error: 'Email du compte introuvable.' }
+
+  const { error: authError } = await supabase.auth.signInWithPassword({
+    email,
+    password: parsed.data.current,
+  })
+  if (authError) return { fieldErrors: { current: ['Mot de passe actuel incorrect'] } }
+
+  const { error } = await supabase.auth.updateUser({ password: parsed.data.password })
+  if (error) return { error: 'Échec de la mise à jour du mot de passe.' }
+
+  await audit(supabase, {
+    organizationId: org.id,
+    action: 'account.password_changed',
+    entityType: 'profile',
+    entityId: user.id,
+  })
+  return { success: true }
+}
+
+/** Changement d'email : Supabase envoie un lien de confirmation à la nouvelle adresse. */
+export async function changeEmail(
+  orgSlug: string,
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const ctx = await requireMembership(orgSlug, 'viewer')
+  if (!ctx) return { error: 'Accès refusé.' }
+  const { supabase, org, user } = ctx
+
+  const parsed = changeEmailSchema.safeParse({ email: formData.get('email') })
+  if (!parsed.success) return { fieldErrors: parsed.error.flatten().fieldErrors }
+  if (parsed.data.email === user.email) {
+    return { fieldErrors: { email: ['C’est déjà votre adresse actuelle'] } }
+  }
+
+  const { error } = await supabase.auth.updateUser({ email: parsed.data.email })
+  if (error) return { error: 'Échec de la demande — réessayez plus tard.' }
+
+  await audit(supabase, {
+    organizationId: org.id,
+    action: 'account.email_change_requested',
+    entityType: 'profile',
+    entityId: user.id,
+    metadata: { new_email: parsed.data.email },
+  })
+  return { success: true }
+}
+
+/** Tables exportées dans le dump RGPD (métadonnées — pas les binaires). */
+const EXPORT_TABLES = [
+  'accounts',
+  'contacts',
+  'leads',
+  'opportunities',
+  'projects',
+  'tasks',
+  'documents',
+  'document_links',
+  'tags',
+  'entity_tags',
+  'tenders',
+  'tender_lots',
+  'tender_checklist_items',
+  'dce_analyses',
+  'datasheet_runs',
+  'memoire_runs',
+  'submissions',
+  'activity_logs',
+] as const
+
+/**
+ * Export complet des données de l'organisation (JSON) — portabilité RGPD.
+ * Réservé owner/admin ; renvoie le JSON en clair, le client le télécharge.
+ */
+export async function exportOrganizationData(
+  orgSlug: string,
+): Promise<{ error?: string; json?: string }> {
+  const ctx = await requireMembership(orgSlug, 'admin')
+  if (!ctx) return { error: 'Accès refusé.' }
+  const { supabase, org } = ctx
+
+  const dump: Record<string, unknown> = {
+    exported_at: new Date().toISOString(),
+    organization: org,
+  }
+  for (const table of EXPORT_TABLES) {
+    const { data } = await supabase
+      .from(table)
+      .select('*')
+      .eq('organization_id', org.id)
+      .limit(10_000)
+    dump[table] = data ?? []
+  }
+
+  await audit(supabase, {
+    organizationId: org.id,
+    action: 'organization.exported',
+    entityType: 'organization',
+    entityId: org.id,
+  })
+
+  return { json: JSON.stringify(dump, null, 2) }
+}
+
+/**
+ * Suppression définitive de l'organisation (owner). Cascade sur toutes les
+ * tables métier + RLS. Confirmation par saisie du nom exact.
+ */
+export async function deleteOrganization(
+  orgSlug: string,
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const ctx = await requireMembership(orgSlug, 'owner')
+  if (!ctx) return { error: 'Seul le propriétaire peut supprimer l’organisation.' }
+  const { supabase, org } = ctx
+
+  const parsed = deleteOrganizationSchema.safeParse({
+    confirmName: formData.get('confirmName'),
+  })
+  if (!parsed.success) return { fieldErrors: parsed.error.flatten().fieldErrors }
+  if (parsed.data.confirmName.trim() !== org.name) {
+    return { fieldErrors: { confirmName: ['Le nom saisi ne correspond pas'] } }
+  }
+
+  const { error } = await supabase.from('organizations').delete().eq('id', org.id)
+  if (error) return { error: 'Suppression impossible — réessayez ou contactez le support.' }
+
+  redirect('/onboarding')
 }

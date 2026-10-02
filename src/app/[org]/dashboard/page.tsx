@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ActivityFeed } from '@/components/activity-feed'
 import { listActivity } from '@/lib/dal/activity'
+import { syncDeadlineNotifications } from '@/lib/dal/deadline-notifications'
 import {
   OPEN_TENDER_STATUSES,
   listUpcomingTenders,
@@ -60,6 +61,14 @@ export default async function DashboardPage({
   const ctx = await requireMembership(orgSlug)
   if (!ctx) notFound()
   const { supabase, org, user } = ctx
+
+  // Rappels d'échéance in-app (+ email si provider configuré) — best-effort,
+  // idempotent : ne bloque jamais l'affichage du tableau de bord.
+  try {
+    await syncDeadlineNotifications(ctx)
+  } catch {
+    // le tableau de bord doit s'afficher même si le rappel échoue
+  }
 
   const now = new Date()
   const today = now.toISOString().slice(0, 10)

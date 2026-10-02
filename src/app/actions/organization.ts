@@ -5,6 +5,8 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { requireMembership, requireUser } from '@/lib/dal/auth'
 import { audit } from '@/lib/audit'
+import { getEnv } from '@/env'
+import { inviteEmailHtml, sendEmail } from '@/lib/email'
 import {
   createOrganizationSchema,
   inviteMemberSchema,
@@ -111,8 +113,21 @@ export async function inviteMember(
     metadata: { email, role },
   })
 
+  // Envoi de l'email si un provider est configuré (Resend). Sinon, l'UI
+  // garde le repli « copier le lien » — jamais de perte de fonctionnalité.
+  const inviteUrl = `/invite/${invitation.token}`
+  const emailSent = await sendEmail({
+    to: email,
+    subject: `Invitation à rejoindre ${org.name} sur Nexus`,
+    html: inviteEmailHtml({
+      orgName: org.name,
+      inviteUrl: `${getEnv().APP_URL}/invite/${invitation.token}`,
+      role,
+    }),
+  })
+
   revalidatePath(`/${orgSlug}/members`)
-  return { success: true, inviteUrl: `/invite/${invitation.token}` }
+  return { success: true, inviteUrl, emailSent }
 }
 
 export async function updateMemberRole(

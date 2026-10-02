@@ -14,6 +14,10 @@ const envSchema = z.object({
   SEARCH_API_KEY: z.string().min(1).optional(),
   APP_URL: z.string().default('http://localhost:3000'),
   SENTRY_DSN: z.string().optional(),
+  /** Emails transactionnels (Resend). Sans clé : les envois sont ignorés et
+   *  les replis manuels restent affichés (lien d'invitation à copier). */
+  RESEND_API_KEY: z.string().min(1).optional(),
+  EMAIL_FROM: z.string().min(3).optional(),
 })
 
 export type Env = z.infer<typeof envSchema>
@@ -32,6 +36,8 @@ export function getEnv(): Env {
       SEARCH_API_KEY: process.env.SEARCH_API_KEY,
       APP_URL: process.env.APP_URL,
       SENTRY_DSN: process.env.SENTRY_DSN,
+      RESEND_API_KEY: process.env.RESEND_API_KEY,
+      EMAIL_FROM: process.env.EMAIL_FROM,
     })
   }
   return cached
